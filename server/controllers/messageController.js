@@ -1,9 +1,30 @@
+
+/**
+ * Message Controller
+ * 
+ * Handles all direct messaging operations including conversation management,
+ * message sending/receiving, read status tracking, and real-time messaging.
+ * 
+ * Features:
+ * - Get conversation lists with unread counts
+ * - Send and receive messages between users
+ * - Mark all messages from a user as read
+ * - Unread message count tracking
+ * - Self-messaging prevention
+ * - Real-time messaging via Socket.IO
+ * 
+ * @author SocialConnect Team
+ * @version 1.0.0
+ */
+
 const db = require('../config/db');
 
-const getConversations = async (req, res) => {
+// Get all conversations
+exports.getConversations = async (req, res) => {
   try {
     const userId = req.user.id;
 
+    // Get all unique conversations (excluding self-conversations)
     const [conversations] = await db.query(
       `SELECT DISTINCT
         CASE 
@@ -16,8 +37,10 @@ const getConversations = async (req, res) => {
       [userId, userId, userId, userId, userId]
     );
 
+    // Get details for each conversation
     const conversationDetails = await Promise.all(
       conversations.map(async (conv) => {
+        // Get user details
         const [users] = await db.query(
           'SELECT id, username, display_name, profile_picture FROM users WHERE id = ?',
           [conv.user_id]
@@ -25,6 +48,7 @@ const getConversations = async (req, res) => {
 
         if (users.length === 0) return null;
 
+        // Get last message
         const [lastMessages] = await db.query(
           `SELECT content, created_at, sender_id
            FROM messages
@@ -34,6 +58,7 @@ const getConversations = async (req, res) => {
           [userId, conv.user_id, conv.user_id, userId]
         );
 
+        // Get unread count
         const [unreadCount] = await db.query(
           `SELECT COUNT(*) as count
            FROM messages
@@ -48,37 +73,63 @@ const getConversations = async (req, res) => {
           profile_picture: users[0].profile_picture,
           last_message: lastMessages[0]?.content || null,
           last_message_time: lastMessages[0]?.created_at || null,
-          unread_count: unreadCount[0].count || 0
+          unread_count: unreadCount[0].count || 0,
+          is_online: false, // You can implement online status later
         };
       })
     );
 
+    // Filter out null values and sort by last message time
     const validConversations = conversationDetails
       .filter(conv => conv !== null)
-      .sort((a, b) => new Date(b.last_message_time || 0) - new Date(a.last_message_time || 0));
+      .sort((a, b) => {
+        if (!a.last_message_time) return 1;
+        if (!b.last_message_time) return -1;
+        return new Date(b.last_message_time) - new Date(a.last_message_time);
+      });
 
-    res.json({ success: true, data: validConversations });
+    res.json({
+      success: true,
+      data: validConversations
+    });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error('Get conversations error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error' 
+    });
   }
 };
 
-const getMessages = async (req, res) => {
+// Get messages with a specific user
+exports.getMessages = async (req, res) => {
   try {
     const userId = req.user.id;
     const { userId: otherUserId } = req.params;
     const { limit = 50, offset = 0 } = req.query;
 
+    // Prevent users from getting messages with themselves
     if (userId === parseInt(otherUserId)) {
-      return res.status(400).json({ success: false, message: 'Cannot message yourself' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'You cannot get messages with yourself' 
+      });
     }
 
-    const [users] = await db.query('SELECT id FROM users WHERE id = ?', [otherUserId]);
+    // Check if other user exists
+    const [users] = await db.query(
+      'SELECT id FROM users WHERE id = ?',
+      [otherUserId]
+    );
+    
     if (users.length === 0) {
-      return res.status(404).json({ success: false, message: 'User not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'User not found' 
+      });
     }
 
+    // Get messages
     const [messages] = await db.query(
       `SELECT m.*, 
        s.username as sender_username,
@@ -93,41 +144,66 @@ const getMessages = async (req, res) => {
       [userId, otherUserId, otherUserId, userId, parseInt(limit), parseInt(offset)]
     );
 
+    // Mark messages as read
     await db.query(
       'UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ? AND is_read = 0',
       [otherUserId, userId]
     );
 
-    res.json({ success: true, data: messages });
+    res.json({
+      success: true,
+      data: messages
+    });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error('Get messages error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error' 
+    });
   }
 };
 
-const sendMessage = async (req, res) => {
+// Send message
+exports.sendMessage = async (req, res) => {
   try {
     const senderId = req.user.id;
     const { receiverId, content } = req.body;
 
     if (!receiverId || !content || content.trim() === '') {
-      return res.status(400).json({ success: false, message: 'Receiver and content are required' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'Receiver and content are required' 
+      });
     }
 
+    // Prevent users from messaging themselves
     if (senderId === parseInt(receiverId)) {
-      return res.status(400).json({ success: false, message: 'Cannot message yourself' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'You cannot message yourself' 
+      });
     }
 
-    const [users] = await db.query('SELECT id FROM users WHERE id = ?', [receiverId]);
+    // Check if receiver exists
+    const [users] = await db.query(
+      'SELECT id FROM users WHERE id = ?',
+      [receiverId]
+    );
+    
     if (users.length === 0) {
-      return res.status(404).json({ success: false, message: 'Receiver not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Receiver not found' 
+      });
     }
 
+    // Insert message
     const [result] = await db.query(
       'INSERT INTO messages (sender_id, receiver_id, content) VALUES (?, ?, ?)',
       [senderId, receiverId, content]
     );
 
+    // Get the created message with sender details
     const [messages] = await db.query(
       `SELECT m.*, 
        s.username as sender_username,
@@ -139,20 +215,31 @@ const sendMessage = async (req, res) => {
       [result.insertId]
     );
 
-    res.status(201).json({ success: true, data: messages[0] });
+    res.status(201).json({
+      success: true,
+      data: messages[0]
+    });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error('Send message error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error' 
+    });
   }
 };
 
-const markAllAsRead = async (req, res) => {
+// Mark all messages from a user as read
+exports.markAllAsRead = async (req, res) => {
   try {
     const userId = req.user.id;
     const { userId: senderId } = req.params;
 
+    // Prevent users from marking messages from themselves as read
     if (userId === parseInt(senderId)) {
-      return res.status(400).json({ success: false, message: 'Invalid operation' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'You cannot mark messages from yourself as read' 
+      });
     }
 
     await db.query(
@@ -160,31 +247,38 @@ const markAllAsRead = async (req, res) => {
       [senderId, userId]
     );
 
-    res.json({ success: true, message: 'All messages marked as read' });
+    res.json({ 
+      success: true,
+      message: 'All messages marked as read' 
+    });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error('Mark all as read error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error' 
+    });
   }
 };
 
-const getUnreadCount = async (req, res) => {
+// Get unread message count
+exports.getUnreadCount = async (req, res) => {
   try {
+    const userId = req.user.id;
+
     const [result] = await db.query(
       'SELECT COUNT(*) as count FROM messages WHERE receiver_id = ? AND is_read = 0',
-      [req.user.id]
+      [userId]
     );
 
-    res.json({ success: true, count: result[0].count });
+    res.json({ 
+      success: true,
+      count: result[0].count 
+    });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error('Get unread count error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error' 
+    });
   }
-};
-
-module.exports = {
-  getConversations,
-  getMessages,
-  sendMessage,
-  markAllAsRead,
-  getUnreadCount
 };
