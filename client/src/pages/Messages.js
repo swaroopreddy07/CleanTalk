@@ -55,7 +55,7 @@ const Messages = () => {
 
   // Auto-start conversation when target user is specified
   useEffect(() => {
-    if (targetUsername && users.length > 0) {
+    if (targetUsername && conversations.length > 0) {
       // Look for existing conversation with this user
       const existingConversation = conversations.find(
         conv => conv.username === targetUsername
@@ -65,14 +65,12 @@ const Messages = () => {
         // Select existing conversation
         setSelectedConversation(existingConversation);
         loadMessages(existingConversation.user_id);
-        // Clear the URL parameter
-        setSearchParams({});
       } else {
         // Auto-start new conversation with target user
         handleAutoStartConversation(targetUsername);
       }
     }
-  }, [targetUsername, conversations, users]);
+  }, [targetUsername, conversations]);
 
   useEffect(() => {
     if (selectedConversation) {
@@ -194,6 +192,13 @@ const Messages = () => {
       const targetUser = users.find(u => u.username === username);
       
       if (targetUser) {
+        // Prevent users from messaging themselves
+        if (targetUser.id === user.id) {
+          alert('You cannot message yourself');
+          setSearchParams({});
+          return;
+        }
+
         // Auto-start conversation with this user
         setSelectedConversation({
           user_id: targetUser.id,
@@ -207,13 +212,30 @@ const Messages = () => {
         // Clear the URL parameter
         setSearchParams({});
       } else {
-        console.error('User not found:', username);
-        alert('User not found');
-        setSearchParams({});
+        // If user not found in current users list, load users and try again
+        await loadUsers();
+        const targetUserAfterLoad = users.find(u => u.username === username);
+        if (targetUserAfterLoad) {
+          // Prevent users from messaging themselves
+          if (targetUserAfterLoad.id === user.id) {
+            alert('You cannot message yourself');
+            setSearchParams({});
+            return;
+          }
+
+          setSelectedConversation({
+            user_id: targetUserAfterLoad.id,
+            username: targetUserAfterLoad.username,
+            display_name: targetUserAfterLoad.display_name,
+            profile_picture: targetUserAfterLoad.profile_picture,
+            last_message: null,
+            unread_count: 0,
+          });
+          setSearchParams({});
+        }
       }
     } catch (error) {
       console.error('Error auto-starting conversation:', error);
-      setSearchParams({});
     }
   };
 

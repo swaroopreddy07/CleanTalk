@@ -4,6 +4,7 @@ const {
   getConversations,
   getMessages,
   sendMessage,
+  markAsRead,
   markAllAsRead,
   getUnreadCount
 } = require('../controllers/messageController');
@@ -15,6 +16,7 @@ router.get('/conversations', getConversations);
 router.get('/unread-count', getUnreadCount);
 router.get('/:userId', getMessages);
 router.post('/', sendMessage);
+router.put('/:messageId/read', markAsRead);
 router.put('/user/:userId/read-all', markAllAsRead);
 
 module.exports = router;

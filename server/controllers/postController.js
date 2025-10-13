@@ -190,7 +190,6 @@ exports.getFeedPosts = async (req, res) => {
     });
   }
 };
-
 // Get single post
 exports.getPost = async (req, res) => {
   try {

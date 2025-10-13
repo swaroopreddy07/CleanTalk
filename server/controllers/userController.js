@@ -15,8 +15,6 @@
  * @version 1.0.0
  */
 
-
-
 const bcrypt = require('bcryptjs');
 const db = require('../config/db');
 const { uploadProfilePicture, deleteProfilePicture } = require('../services/azureStorage');
@@ -640,6 +638,7 @@ const rejectFollowRequest = async (req, res) => {
     });
   }
 };
+
 module.exports = {
   getUsers,
   searchUsers,

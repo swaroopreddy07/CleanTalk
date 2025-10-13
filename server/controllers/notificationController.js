@@ -7,7 +7,7 @@
  * Features:
  * - Get all notifications with sender details and post context
  * - Unread notification count tracking
- * - Mark all notifications as read
+ * - Mark notifications as read (single or bulk)
  * - Delete notifications
  * - Real-time notification updates via Socket.IO
  * 
@@ -94,6 +94,38 @@ exports.markAllAsRead = async (req, res) => {
     });
   } catch (error) {
     console.error('Mark all as read error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error' 
+    });
+  }
+};
+
+// Mark single as read
+exports.markAsRead = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    // Mark specific notification as read
+    const [result] = await db.execute(
+      'UPDATE notifications SET is_read = true WHERE id = ? AND user_id = ?',
+      [id, userId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Notification not found' 
+      });
+    }
+
+    res.json({ 
+      success: true,
+      message: 'Notification marked as read' 
+    });
+  } catch (error) {
+    console.error('Mark as read error:', error);
     res.status(500).json({ 
       success: false,
       message: 'Server error' 

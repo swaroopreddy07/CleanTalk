@@ -1,4 +1,3 @@
-
 /**
  * Message Controller
  * 
@@ -8,7 +7,7 @@
  * Features:
  * - Get conversation lists with unread counts
  * - Send and receive messages between users
- * - Mark all messages from a user as read
+ * - Mark messages as read (single or bulk)
  * - Unread message count tracking
  * - Self-messaging prevention
  * - Real-time messaging via Socket.IO
@@ -221,6 +220,38 @@ exports.sendMessage = async (req, res) => {
     });
   } catch (error) {
     console.error('Send message error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error' 
+    });
+  }
+};
+
+// Mark message as read
+exports.markAsRead = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const userId = req.user.id;
+
+    // Update only if the current user is the receiver
+    const [result] = await db.query(
+      'UPDATE messages SET is_read = 1 WHERE id = ? AND receiver_id = ?',
+      [messageId, userId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Message not found or unauthorized' 
+      });
+    }
+
+    res.json({ 
+      success: true,
+      message: 'Message marked as read' 
+    });
+  } catch (error) {
+    console.error('Mark as read error:', error);
     res.status(500).json({ 
       success: false,
       message: 'Server error' 
