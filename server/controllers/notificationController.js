@@ -1,30 +1,11 @@
-/**
- * Notification Controller
- * 
- * Handles all notification-related operations including retrieval,
- * read status management, and deletion of user notifications.
- * 
- * Features:
- * - Get all notifications with sender details and post context
- * - Unread notification count tracking
- * - Mark notifications as read (single or bulk)
- * - Delete notifications
- * - Real-time notification updates via Socket.IO
- * 
- * @author SocialConnect Team
- * @version 1.0.0
- */
-
 const db = require('../config/db');
 
-// Get all notifications
 exports.getNotifications = async (req, res) => {
   try {
     const userId = req.user.id;
     const limit = parseInt(req.query.limit) || 20;
     const offset = parseInt(req.query.offset) || 0;
 
-    // Get notifications with sender details and optional post context
     const [notifications] = await db.execute(
       `SELECT n.*, 
        u.username as sender_username,
@@ -53,12 +34,10 @@ exports.getNotifications = async (req, res) => {
   }
 };
 
-// Get unread count
 exports.getUnreadCount = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Count unread notifications for badge display
     const [result] = await db.execute(
       'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = false',
       [userId]
@@ -77,12 +56,10 @@ exports.getUnreadCount = async (req, res) => {
   }
 };
 
-// Mark all as read
 exports.markAllAsRead = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Mark all unread notifications as read
     await db.execute(
       'UPDATE notifications SET is_read = true WHERE user_id = ? AND is_read = false',
       [userId]
@@ -101,13 +78,11 @@ exports.markAllAsRead = async (req, res) => {
   }
 };
 
-// Mark single as read
 exports.markAsRead = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
 
-    // Mark specific notification as read
     const [result] = await db.execute(
       'UPDATE notifications SET is_read = true WHERE id = ? AND user_id = ?',
       [id, userId]
@@ -133,13 +108,11 @@ exports.markAsRead = async (req, res) => {
   }
 };
 
-// Delete notification
 exports.deleteNotification = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
 
-    // Delete specific notification (user can only delete their own)
     const [result] = await db.execute(
       'DELETE FROM notifications WHERE id = ? AND user_id = ?',
       [id, userId]

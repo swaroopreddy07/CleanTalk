@@ -3,19 +3,14 @@ const jwt = require('jsonwebtoken');
 const { validationResult } = require('express-validator');
 const db = require('../config/db');
 
-// Generate JWT Token
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRE
   });
 };
 
-// @desc    Register user
-// @route   POST /api/auth/register
-// @access  Public
 const register = async (req, res) => {
   try {
-    // Check validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ 
@@ -26,7 +21,6 @@ const register = async (req, res) => {
 
     const { username, email, password, display_name } = req.body;
 
-    // Check if user exists
     const [existingUsers] = await db.execute(
       'SELECT id FROM users WHERE email = ? OR username = ?',
       [email, username]
@@ -39,17 +33,14 @@ const register = async (req, res) => {
       });
     }
 
-    // Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create user
     const [result] = await db.execute(
       'INSERT INTO users (username, email, password, display_name) VALUES (?, ?, ?, ?)',
       [username, email, hashedPassword, display_name || username]
     );
 
-    // Generate token
     const token = generateToken(result.insertId);
 
     res.status(201).json({
@@ -71,14 +62,10 @@ const register = async (req, res) => {
   }
 };
 
-// @desc    Login user
-// @route   POST /api/auth/login
-// @access  Public
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Check for user
     const [users] = await db.execute(
       'SELECT * FROM users WHERE email = ? OR username = ?',
       [email, email]
@@ -93,7 +80,6 @@ const login = async (req, res) => {
 
     const user = users[0];
 
-    // Check password
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
@@ -103,10 +89,8 @@ const login = async (req, res) => {
       });
     }
 
-    // Generate token
     const token = generateToken(user.id);
 
-    // Remove password from response
     delete user.password;
 
     res.json({
@@ -123,9 +107,6 @@ const login = async (req, res) => {
   }
 };
 
-// @desc    Get current logged in user
-// @route   GET /api/auth/me
-// @access  Private
 const getMe = async (req, res) => {
   try {
     const [users] = await db.execute(

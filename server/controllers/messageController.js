@@ -1,29 +1,9 @@
-/**
- * Message Controller
- * 
- * Handles all direct messaging operations including conversation management,
- * message sending/receiving, read status tracking, and real-time messaging.
- * 
- * Features:
- * - Get conversation lists with unread counts
- * - Send and receive messages between users
- * - Mark messages as read (single or bulk)
- * - Unread message count tracking
- * - Self-messaging prevention
- * - Real-time messaging via Socket.IO
- * 
- * @author SocialConnect Team
- * @version 1.0.0
- */
-
 const db = require('../config/db');
 
-// Get all conversations
 exports.getConversations = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Get all unique conversations (excluding self-conversations)
     const [conversations] = await db.query(
       `SELECT DISTINCT
         CASE 
@@ -36,10 +16,8 @@ exports.getConversations = async (req, res) => {
       [userId, userId, userId, userId, userId]
     );
 
-    // Get details for each conversation
     const conversationDetails = await Promise.all(
       conversations.map(async (conv) => {
-        // Get user details
         const [users] = await db.query(
           'SELECT id, username, display_name, profile_picture FROM users WHERE id = ?',
           [conv.user_id]
@@ -47,7 +25,6 @@ exports.getConversations = async (req, res) => {
 
         if (users.length === 0) return null;
 
-        // Get last message
         const [lastMessages] = await db.query(
           `SELECT content, created_at, sender_id
            FROM messages
@@ -57,7 +34,6 @@ exports.getConversations = async (req, res) => {
           [userId, conv.user_id, conv.user_id, userId]
         );
 
-        // Get unread count
         const [unreadCount] = await db.query(
           `SELECT COUNT(*) as count
            FROM messages
@@ -73,12 +49,11 @@ exports.getConversations = async (req, res) => {
           last_message: lastMessages[0]?.content || null,
           last_message_time: lastMessages[0]?.created_at || null,
           unread_count: unreadCount[0].count || 0,
-          is_online: false, // You can implement online status later
+          is_online: false,
         };
       })
     );
 
-    // Filter out null values and sort by last message time
     const validConversations = conversationDetails
       .filter(conv => conv !== null)
       .sort((a, b) => {
@@ -100,14 +75,12 @@ exports.getConversations = async (req, res) => {
   }
 };
 
-// Get messages with a specific user
 exports.getMessages = async (req, res) => {
   try {
     const userId = req.user.id;
     const { userId: otherUserId } = req.params;
     const { limit = 50, offset = 0 } = req.query;
 
-    // Prevent users from getting messages with themselves
     if (userId === parseInt(otherUserId)) {
       return res.status(400).json({ 
         success: false,
@@ -115,7 +88,6 @@ exports.getMessages = async (req, res) => {
       });
     }
 
-    // Check if other user exists
     const [users] = await db.query(
       'SELECT id FROM users WHERE id = ?',
       [otherUserId]
@@ -128,7 +100,6 @@ exports.getMessages = async (req, res) => {
       });
     }
 
-    // Get messages
     const [messages] = await db.query(
       `SELECT m.*, 
        s.username as sender_username,
@@ -143,7 +114,6 @@ exports.getMessages = async (req, res) => {
       [userId, otherUserId, otherUserId, userId, parseInt(limit), parseInt(offset)]
     );
 
-    // Mark messages as read
     await db.query(
       'UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ? AND is_read = 0',
       [otherUserId, userId]
@@ -162,7 +132,6 @@ exports.getMessages = async (req, res) => {
   }
 };
 
-// Send message
 exports.sendMessage = async (req, res) => {
   try {
     const senderId = req.user.id;
@@ -175,7 +144,6 @@ exports.sendMessage = async (req, res) => {
       });
     }
 
-    // Prevent users from messaging themselves
     if (senderId === parseInt(receiverId)) {
       return res.status(400).json({ 
         success: false,
@@ -183,7 +151,6 @@ exports.sendMessage = async (req, res) => {
       });
     }
 
-    // Check if receiver exists
     const [users] = await db.query(
       'SELECT id FROM users WHERE id = ?',
       [receiverId]
@@ -196,13 +163,11 @@ exports.sendMessage = async (req, res) => {
       });
     }
 
-    // Insert message
     const [result] = await db.query(
       'INSERT INTO messages (sender_id, receiver_id, content) VALUES (?, ?, ?)',
       [senderId, receiverId, content]
     );
 
-    // Get the created message with sender details
     const [messages] = await db.query(
       `SELECT m.*, 
        s.username as sender_username,
@@ -227,13 +192,11 @@ exports.sendMessage = async (req, res) => {
   }
 };
 
-// Mark message as read
 exports.markAsRead = async (req, res) => {
   try {
     const { messageId } = req.params;
     const userId = req.user.id;
 
-    // Update only if the current user is the receiver
     const [result] = await db.query(
       'UPDATE messages SET is_read = 1 WHERE id = ? AND receiver_id = ?',
       [messageId, userId]
@@ -259,13 +222,11 @@ exports.markAsRead = async (req, res) => {
   }
 };
 
-// Mark all messages from a user as read
 exports.markAllAsRead = async (req, res) => {
   try {
     const userId = req.user.id;
     const { userId: senderId } = req.params;
 
-    // Prevent users from marking messages from themselves as read
     if (userId === parseInt(senderId)) {
       return res.status(400).json({ 
         success: false,
@@ -291,7 +252,6 @@ exports.markAllAsRead = async (req, res) => {
   }
 };
 
-// Get unread message count
 exports.getUnreadCount = async (req, res) => {
   try {
     const userId = req.user.id;

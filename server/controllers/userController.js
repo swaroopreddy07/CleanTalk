@@ -1,37 +1,9 @@
-/**
- * User Controller
- * 
- * Handles all user-related operations including user management, authentication,
- * profile operations, follow/unfollow functionality, and user search.
- * 
- * Features:
- * - User CRUD operations
- * - Profile picture management with Azure Blob Storage
- * - Follow/Unfollow system with request states
- * - User search and suggestions
- * - Real-time notifications via Socket.IO
- * 
- * @author SocialConnect Team
- * @version 1.0.0
- */
-
 const bcrypt = require('bcryptjs');
 const db = require('../config/db');
 const { uploadProfilePicture, deleteProfilePicture } = require('../services/azureStorage');
 
-/**
- * Get All Users
- * 
- * Retrieves a list of all users with basic profile information.
- * Used for admin purposes or general user discovery.
- * 
- * @route   GET /api/users
- * @access  Private
- * @returns {Object} List of users with basic profile information
- */
 const getUsers = async (req, res) => {
   try {
-    // Query to get basic user information (limited to 50 users for performance)
     const [users] = await db.execute(
       'SELECT id, username, display_name, profile_picture, bio FROM users LIMIT 50'
     );
@@ -49,9 +21,6 @@ const getUsers = async (req, res) => {
   }
 };
 
-// @desc    Search users
-// @route   GET /api/users/search
-// @access  Private
 const searchUsers = async (req, res) => {
   try {
     const { q } = req.query;
@@ -66,7 +35,6 @@ const searchUsers = async (req, res) => {
 
     const searchTerm = `%${q}%`;
 
-    // Check if status column exists for follow request system compatibility
     let statusColumnExists = false;
     try {
       const [columns] = await db.execute("SHOW COLUMNS FROM followers LIKE 'status'");
@@ -77,7 +45,6 @@ const searchUsers = async (req, res) => {
 
     let query, params;
     if (statusColumnExists) {
-      // Query with follow request system - check for accepted/pending status
       query = `SELECT u.id, u.username, u.display_name, u.profile_picture, u.bio,
        (SELECT COUNT(*) FROM followers WHERE following_id = u.id AND status = 'accepted') as followers_count,
        (SELECT COUNT(*) FROM followers WHERE follower_id = u.id AND status = 'accepted') as following_count,
@@ -92,7 +59,6 @@ const searchUsers = async (req, res) => {
        LIMIT 20`;
       params = [currentUserId, currentUserId, searchTerm, searchTerm, currentUserId];
     } else {
-      // Fallback query without status column (legacy compatibility)
       query = `SELECT u.id, u.username, u.display_name, u.profile_picture, u.bio,
        (SELECT COUNT(*) FROM followers WHERE following_id = u.id) as followers_count,
        (SELECT COUNT(*) FROM followers WHERE follower_id = u.id) as following_count,
@@ -122,14 +88,10 @@ const searchUsers = async (req, res) => {
   }
 };
 
-// @desc    Get user profile by username
-// @route   GET /api/users/:username
-// @access  Private
 const getUserProfile = async (req, res) => {
   try {
     const { username } = req.params;
 
-    // First check if status column exists
     let statusColumnExists = false;
     try {
       const [columns] = await db.execute("SHOW COLUMNS FROM followers LIKE 'status'");
@@ -140,7 +102,6 @@ const getUserProfile = async (req, res) => {
 
     let query, params;
     if (statusColumnExists) {
-      // Use the new query with status column
       query = `SELECT u.id, u.username, u.display_name, u.profile_picture, u.bio, u.website, u.created_at,
                (SELECT COUNT(*) FROM posts WHERE user_id = u.id) as posts_count,
                (SELECT COUNT(*) FROM followers WHERE following_id = u.id AND status = 'accepted') as followers_count,
@@ -153,7 +114,6 @@ const getUserProfile = async (req, res) => {
                FROM users u WHERE u.username = ?`;
       params = [req.user.id, req.user.id, username];
     } else {
-      // Use the old query without status column
       query = `SELECT u.id, u.username, u.display_name, u.profile_picture, u.bio, u.website, u.created_at,
                (SELECT COUNT(*) FROM posts WHERE user_id = u.id) as posts_count,
                (SELECT COUNT(*) FROM followers WHERE following_id = u.id) as followers_count,
@@ -190,24 +150,18 @@ const getUserProfile = async (req, res) => {
   }
 };
 
-// @desc    Update user profile
-// @route   PUT /api/users/profile
-// @access  Private
 const updateProfile = async (req, res) => {
   try {
     const { display_name, bio, location, website, removeProfilePicture } = req.body;
     let profilePictureUrl = null;
 
-    // Get current user data
     const [currentUser] = await db.execute(
       'SELECT profile_picture FROM users WHERE id = ?',
       [req.user.id]
     );
 
-    // Handle profile picture removal
     if (removeProfilePicture === 'true') {
       if (currentUser[0].profile_picture) {
-        // Delete from Azure if it's an Azure URL
         if (currentUser[0].profile_picture.includes('blob.core.windows.net')) {
           await deleteProfilePicture(currentUser[0].profile_picture);
         }
@@ -217,16 +171,12 @@ const updateProfile = async (req, res) => {
         'UPDATE users SET profile_picture = NULL WHERE id = ?',
         [req.user.id]
       );
-    }
-    // Handle new profile picture upload
-    else if (req.file) {
-      // Upload to Azure
+    } else if (req.file) {
       profilePictureUrl = await uploadProfilePicture(
         req.file.buffer,
         req.file.originalname
       );
 
-      // Delete old profile picture from Azure if exists
       if (currentUser[0].profile_picture && 
           currentUser[0].profile_picture.includes('blob.core.windows.net')) {
         await deleteProfilePicture(currentUser[0].profile_picture);
@@ -241,10 +191,8 @@ const updateProfile = async (req, res) => {
       values = [display_name || '', bio || '', location || '', website || '', profilePictureUrl, req.user.id];
     }
 
-    // Update user profile
     await db.execute(query, values);
 
-    // Fetch updated user
     const [users] = await db.execute(
       'SELECT id, username, email, display_name, profile_picture, bio, location, website FROM users WHERE id = ?',
       [req.user.id]
@@ -266,9 +214,6 @@ const updateProfile = async (req, res) => {
   }
 };
 
-// @desc    Follow a user (sends follow request)
-// @route   POST /api/users/:userId/follow
-// @access  Private
 const followUser = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -281,7 +226,6 @@ const followUser = async (req, res) => {
       });
     }
 
-    // Check if already following or has pending request
     const [existing] = await db.execute(
       'SELECT id, status FROM followers WHERE follower_id = ? AND following_id = ?',
       [followerId, userId]
@@ -302,13 +246,11 @@ const followUser = async (req, res) => {
       }
     }
 
-    // Add follow request (pending status)
     await db.execute(
       'INSERT INTO followers (follower_id, following_id, status) VALUES (?, ?, ?)',
       [followerId, userId, 'pending']
     );
 
-    // Create notification
     await db.execute(
       'INSERT INTO notifications (user_id, sender_id, type) VALUES (?, ?, ?)',
       [userId, followerId, 'follow_request']
@@ -327,15 +269,11 @@ const followUser = async (req, res) => {
   }
 };
 
-// @desc    Unfollow a user or cancel pending request
-// @route   DELETE /api/users/:userId/unfollow
-// @access  Private
 const unfollowUser = async (req, res) => {
   try {
     const { userId } = req.params;
     const followerId = req.user.id;
 
-    // Delete the follow relationship (works for both accepted and pending)
     const [result] = await db.execute(
       'DELETE FROM followers WHERE follower_id = ? AND following_id = ?',
       [followerId, userId]
@@ -361,15 +299,11 @@ const unfollowUser = async (req, res) => {
   }
 };
 
-// @desc    Get followers
-// @route   GET /api/users/:userId/followers
-// @access  Private
 const getFollowers = async (req, res) => {
   try {
     const { userId } = req.params;
     const currentUserId = req.user.id;
 
-    // Check if status column exists
     let statusColumnExists = false;
     try {
       const [columns] = await db.execute("SHOW COLUMNS FROM followers LIKE 'status'");
@@ -423,15 +357,11 @@ const getFollowers = async (req, res) => {
   }
 };
 
-// @desc    Get following
-// @route   GET /api/users/:userId/following
-// @access  Private
 const getFollowing = async (req, res) => {
   try {
     const { userId } = req.params;
     const currentUserId = req.user.id;
 
-    // Check if status column exists
     let statusColumnExists = false;
     try {
       const [columns] = await db.execute("SHOW COLUMNS FROM followers LIKE 'status'");
@@ -485,9 +415,6 @@ const getFollowing = async (req, res) => {
   }
 };
 
-// @desc    Get user suggestions
-// @route   GET /api/users/suggestions
-// @access  Private
 const getSuggestions = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -524,9 +451,6 @@ const getSuggestions = async (req, res) => {
   }
 };
 
-// @desc    Get follow requests for current user
-// @route   GET /api/users/follow-requests
-// @access  Private
 const getFollowRequests = async (req, res) => {
   try {
     const currentUserId = req.user.id;
@@ -553,15 +477,11 @@ const getFollowRequests = async (req, res) => {
   }
 };
 
-// @desc    Accept a follow request
-// @route   POST /api/users/follow-requests/:requestId/accept
-// @access  Private
 const acceptFollowRequest = async (req, res) => {
   try {
     const { requestId } = req.params;
     const currentUserId = req.user.id;
 
-    // Verify the request belongs to current user and is pending
     const [request] = await db.execute(
       'SELECT follower_id FROM followers WHERE id = ? AND following_id = ? AND status = ?',
       [requestId, currentUserId, 'pending']
@@ -574,13 +494,11 @@ const acceptFollowRequest = async (req, res) => {
       });
     }
 
-    // Update status to accepted
     await db.execute(
       'UPDATE followers SET status = ? WHERE id = ?',
       ['accepted', requestId]
     );
 
-    // Create notification for the requester
     await db.execute(
       'INSERT INTO notifications (user_id, sender_id, type) VALUES (?, ?, ?)',
       [request[0].follower_id, currentUserId, 'follow_accepted']
@@ -599,15 +517,11 @@ const acceptFollowRequest = async (req, res) => {
   }
 };
 
-// @desc    Reject a follow request
-// @route   POST /api/users/follow-requests/:requestId/reject
-// @access  Private
 const rejectFollowRequest = async (req, res) => {
   try {
     const { requestId } = req.params;
     const currentUserId = req.user.id;
 
-    // Verify the request belongs to current user and is pending
     const [request] = await db.execute(
       'SELECT id FROM followers WHERE id = ? AND following_id = ? AND status = ?',
       [requestId, currentUserId, 'pending']
@@ -620,7 +534,6 @@ const rejectFollowRequest = async (req, res) => {
       });
     }
 
-    // Delete the request
     await db.execute(
       'DELETE FROM followers WHERE id = ?',
       [requestId]

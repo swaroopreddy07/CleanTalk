@@ -1,26 +1,7 @@
-/**
- * Post Controller
- * 
- * Handles all post-related operations including creation, retrieval, 
- * interaction (likes, comments, saves), and deletion of posts.
- * 
- * Features:
- * - Post creation with image upload (Azure Blob Storage with local fallback)
- * - Feed posts (from followed users only)
- * - User-specific posts
- * - Post interactions (like, unlike, comment, save, unsave)
- * - Activity tracking (liked and commented posts)
- * - Automatic notification generation
- * 
- * @author SocialConnect Team
- * @version 1.0.0
- */
-
 const db = require('../config/db');
 const path = require('path');
 const { uploadPostImage, deletePostImage } = require('../services/azureStorage');
 
-// Create a new post
 exports.createPost = async (req, res) => {
   try {
     const { caption } = req.body;
@@ -33,7 +14,6 @@ exports.createPost = async (req, res) => {
       });
     }
 
-    // Upload to Azure (with fallback to local storage)
     let imageUrl;
     try {
       imageUrl = await uploadPostImage(
@@ -41,36 +21,29 @@ exports.createPost = async (req, res) => {
         req.file.originalname
       );
     } catch (azureError) {
-      // Fallback to local storage if Azure is not configured
       console.warn('Azure upload failed, using local storage fallback:', azureError.message);
       const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
       const ext = path.extname(req.file.originalname);
       const name = path.basename(req.file.originalname, ext);
       const filename = `${name}-${uniqueSuffix}${ext}`;
       
-      // Ensure uploads directory exists
       const fs = require('fs');
       const uploadsDir = path.join(__dirname, '../uploads/posts');
       if (!fs.existsSync(uploadsDir)) {
         fs.mkdirSync(uploadsDir, { recursive: true });
       }
       
-      // Save file locally
       const filePath = path.join(uploadsDir, filename);
       fs.writeFileSync(filePath, req.file.buffer);
       imageUrl = `/uploads/posts/${filename}`;
     }
 
-    // Insert new post into database
     const [result] = await db.execute(
       'INSERT INTO posts (user_id, image_url, caption) VALUES (?, ?, ?)',
       [userId, imageUrl, caption || '']
     );
 
     const postId = result.insertId;
-
-
-    // Retrieve the created post with user details and engagement counts
     const [post] = await db.execute(
       `SELECT p.*, u.username, u.display_name, u.profile_picture,
        (SELECT COUNT(*) FROM likes WHERE post_id = p.id) as likes_count,
@@ -95,13 +68,11 @@ exports.createPost = async (req, res) => {
   }
 };
 
-// Get all posts (for explore/discover)
 exports.getAllPosts = async (req, res) => {
   try {
     const userId = req.user.id;
     const { limit = 100, offset = 0 } = req.query;
 
-    // Get all posts for explore/discover page with user details and engagement data
     const [posts] = await db.execute(
       `SELECT p.*, u.username, u.display_name, u.profile_picture,
        (SELECT COUNT(*) FROM likes WHERE post_id = p.id) as likes_count,
@@ -128,13 +99,11 @@ exports.getAllPosts = async (req, res) => {
   }
 };
 
-// Get feed posts (ONLY from followed users, NOT including own posts)
 exports.getFeedPosts = async (req, res) => {
   try {
     const userId = req.user.id;
     const { limit = 20, offset = 0 } = req.query;
 
-    // Check if status column exists for follow request system compatibility
     let statusColumnExists = false;
     try {
       const [columns] = await db.execute("SHOW COLUMNS FROM followers LIKE 'status'");
@@ -145,7 +114,6 @@ exports.getFeedPosts = async (req, res) => {
 
     let query, params;
     if (statusColumnExists) {
-      // Query with follow request system - only show posts from accepted followers
       query = `SELECT p.*, u.username, u.display_name, u.profile_picture,
                (SELECT COUNT(*) FROM likes WHERE post_id = p.id) as likes_count,
                (SELECT COUNT(*) FROM comments WHERE post_id = p.id) as comments_count,
@@ -160,7 +128,6 @@ exports.getFeedPosts = async (req, res) => {
                LIMIT ${parseInt(limit)} OFFSET ${parseInt(offset)}`;
       params = [userId, userId, userId];
     } else {
-      // Fallback query without status column (legacy compatibility)
       query = `SELECT p.*, u.username, u.display_name, u.profile_picture,
                (SELECT COUNT(*) FROM likes WHERE post_id = p.id) as likes_count,
                (SELECT COUNT(*) FROM comments WHERE post_id = p.id) as comments_count,
@@ -190,7 +157,7 @@ exports.getFeedPosts = async (req, res) => {
     });
   }
 };
-// Get single post
+
 exports.getPost = async (req, res) => {
   try {
     const { postId } = req.params;
@@ -228,13 +195,11 @@ exports.getPost = async (req, res) => {
   }
 };
 
-// Get user posts
 exports.getUserPosts = async (req, res) => {
   try {
     const { username } = req.params;
     const userId = req.user.id;
 
-    // Get user id from username
     const [users] = await db.execute('SELECT id FROM users WHERE username = ?', [username]);
     
     if (users.length === 0) {
@@ -272,13 +237,11 @@ exports.getUserPosts = async (req, res) => {
   }
 };
 
-// Delete post
 exports.deletePost = async (req, res) => {
   try {
     const { postId } = req.params;
     const userId = req.user.id;
 
-    // Check if post exists and belongs to user
     const [posts] = await db.execute(
       'SELECT * FROM posts WHERE id = ? AND user_id = ?',
       [postId, userId]
@@ -293,13 +256,10 @@ exports.deletePost = async (req, res) => {
 
     const post = posts[0];
 
-
-    // Delete image from Azure if it exists
     if (post.image_url && post.image_url.includes('blob.core.windows.net')) {
       await deletePostImage(post.image_url);
     }
 
-    // Delete post (cascade will handle likes, comments, saved_posts)
     await db.execute('DELETE FROM posts WHERE id = ?', [postId]);
 
     res.json({ 
@@ -315,13 +275,11 @@ exports.deletePost = async (req, res) => {
   }
 };
 
-// Like post
 exports.likePost = async (req, res) => {
   try {
     const { postId } = req.params;
     const userId = req.user.id;
 
-    // Check if post exists
     const [posts] = await db.execute('SELECT user_id FROM posts WHERE id = ?', [postId]);
     
     if (posts.length === 0) {
@@ -333,7 +291,6 @@ exports.likePost = async (req, res) => {
 
     const postOwnerId = posts[0].user_id;
 
-    // Check if already liked
     const [existingLike] = await db.execute(
       'SELECT * FROM likes WHERE post_id = ? AND user_id = ?',
       [postId, userId]
@@ -346,10 +303,8 @@ exports.likePost = async (req, res) => {
       });
     }
 
-    // Add like
     await db.execute('INSERT INTO likes (post_id, user_id) VALUES (?, ?)', [postId, userId]);
 
-    // Create notification for post owner (if not liking own post)
     if (postOwnerId !== userId) {
       await db.execute(
         'INSERT INTO notifications (user_id, sender_id, type, post_id) VALUES (?, ?, ?, ?)',
@@ -357,7 +312,6 @@ exports.likePost = async (req, res) => {
       );
     }
 
-    // Get updated like count
     const [result] = await db.execute(
       'SELECT COUNT(*) as likes_count FROM likes WHERE post_id = ?',
       [postId]
@@ -377,13 +331,11 @@ exports.likePost = async (req, res) => {
   }
 };
 
-// Unlike post
 exports.unlikePost = async (req, res) => {
   try {
     const { postId } = req.params;
     const userId = req.user.id;
 
-    // Delete like
     const [result] = await db.execute(
       'DELETE FROM likes WHERE post_id = ? AND user_id = ?',
       [postId, userId]
@@ -396,7 +348,6 @@ exports.unlikePost = async (req, res) => {
       });
     }
 
-    // Get updated like count
     const [countResult] = await db.execute(
       'SELECT COUNT(*) as likes_count FROM likes WHERE post_id = ?',
       [postId]
@@ -416,7 +367,6 @@ exports.unlikePost = async (req, res) => {
   }
 };
 
-// Add comment
 exports.addComment = async (req, res) => {
   try {
     const { postId } = req.params;
@@ -430,7 +380,6 @@ exports.addComment = async (req, res) => {
       });
     }
 
-    // Check if post exists
     const [posts] = await db.execute('SELECT user_id FROM posts WHERE id = ?', [postId]);
     
     if (posts.length === 0) {
@@ -442,13 +391,11 @@ exports.addComment = async (req, res) => {
 
     const postOwnerId = posts[0].user_id;
 
-    // Add comment
     const [result] = await db.execute(
       'INSERT INTO comments (post_id, user_id, content) VALUES (?, ?, ?)',
       [postId, userId, content]
     );
 
-    // Create notification for post owner (if not commenting on own post)
     if (postOwnerId !== userId) {
       await db.execute(
         'INSERT INTO notifications (user_id, sender_id, type, post_id, message) VALUES (?, ?, ?, ?, ?)',
@@ -456,7 +403,6 @@ exports.addComment = async (req, res) => {
       );
     }
 
-    // Get the created comment with user details
     const [comments] = await db.execute(
       `SELECT c.*, u.username, u.display_name, u.profile_picture
        FROM comments c
@@ -478,7 +424,6 @@ exports.addComment = async (req, res) => {
   }
 };
 
-// Get comments
 exports.getComments = async (req, res) => {
   try {
     const { postId } = req.params;
@@ -507,13 +452,11 @@ exports.getComments = async (req, res) => {
   }
 };
 
-// Save post
 exports.savePost = async (req, res) => {
   try {
     const { postId } = req.params;
     const userId = req.user.id;
 
-    // Check if post exists
     const [posts] = await db.execute('SELECT id FROM posts WHERE id = ?', [postId]);
     
     if (posts.length === 0) {
@@ -523,7 +466,6 @@ exports.savePost = async (req, res) => {
       });
     }
 
-    // Check if already saved
     const [existing] = await db.execute(
       'SELECT * FROM saved_posts WHERE post_id = ? AND user_id = ?',
       [postId, userId]
@@ -536,7 +478,6 @@ exports.savePost = async (req, res) => {
       });
     }
 
-    // Save post
     await db.execute('INSERT INTO saved_posts (post_id, user_id) VALUES (?, ?)', [postId, userId]);
 
     res.json({ 
@@ -552,7 +493,6 @@ exports.savePost = async (req, res) => {
   }
 };
 
-// Unsave post
 exports.unsavePost = async (req, res) => {
   try {
     const { postId } = req.params;
@@ -583,7 +523,6 @@ exports.unsavePost = async (req, res) => {
   }
 };
 
-// Get saved posts
 exports.getSavedPosts = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -615,7 +554,6 @@ exports.getSavedPosts = async (req, res) => {
   }
 };
 
-// Get liked posts (for activity page)
 exports.getLikedPosts = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -644,7 +582,6 @@ exports.getLikedPosts = async (req, res) => {
   }
 };
 
-// Get commented posts (for activity page)
 exports.getCommentedPosts = async (req, res) => {
   try {
     const userId = req.user.id;

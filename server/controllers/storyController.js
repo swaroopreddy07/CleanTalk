@@ -1,24 +1,6 @@
-/**
- * Story Controller
- * 
- * Handles all story-related operations including creation, retrieval,
- * deletion, and cleanup of temporary 24-hour stories.
- * 
- * Features:
- * - Story creation with automatic 24-hour expiration
- * - Get active stories from followed users and self
- * - Story deletion with Azure image cleanup
- * - Expired story cleanup (cron job functionality)
- * - Follow request system compatibility
- * 
- * @author SocialConnect Team
- * @version 1.0.0
- */
-
 const db = require('../config/db');
 const { uploadStoryImage, deleteStoryImage } = require('../services/azureStorage');
 
-// Create a story
 exports.createStory = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -30,13 +12,11 @@ exports.createStory = async (req, res) => {
       });
     }
 
-    // Upload to Azure
     const imageUrl = await uploadStoryImage(
       req.file.buffer,
       req.file.originalname
     );
 
-    // Story expires after 24 hours
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     const [result] = await db.execute(
@@ -65,13 +45,11 @@ exports.createStory = async (req, res) => {
   }
 };
 
-// Get all active stories (including followed users)
 exports.getStories = async (req, res) => {
   try {
     const userId = req.user.id;
     const now = new Date();
 
-    // Check if status column exists
     let statusColumnExists = false;
     try {
       const [columns] = await db.execute("SHOW COLUMNS FROM followers LIKE 'status'");
@@ -107,7 +85,6 @@ exports.getStories = async (req, res) => {
 
     const [stories] = await db.execute(query, params);
 
-    // Group stories by user
     const groupedStories = stories.reduce((acc, story) => {
       const key = story.user_id;
       if (!acc[key]) {
@@ -137,7 +114,6 @@ exports.getStories = async (req, res) => {
   }
 };
 
-// Get user stories
 exports.getUserStories = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -165,7 +141,6 @@ exports.getUserStories = async (req, res) => {
   }
 };
 
-// Delete story
 exports.deleteStory = async (req, res) => {
   try {
     const { storyId } = req.params;
@@ -185,7 +160,6 @@ exports.deleteStory = async (req, res) => {
 
     const story = stories[0];
 
-    // Delete image from Azure if it exists
     if (story.image_url && story.image_url.includes('blob.core.windows.net')) {
       await deleteStoryImage(story.image_url);
     }
@@ -205,25 +179,21 @@ exports.deleteStory = async (req, res) => {
   }
 };
 
-// Clean up expired stories (can be called by a cron job)
 exports.cleanupExpiredStories = async (req, res) => {
   try {
     const now = new Date();
 
-    // Get expired stories to delete their images
     const [expiredStories] = await db.execute(
       'SELECT * FROM stories WHERE expires_at <= ?',
       [now]
     );
 
-    // Delete image files from Azure
     for (const story of expiredStories) {
       if (story.image_url && story.image_url.includes('blob.core.windows.net')) {
         await deleteStoryImage(story.image_url);
       }
     }
 
-    // Delete expired stories from database
     const [result] = await db.execute(
       'DELETE FROM stories WHERE expires_at <= ?',
       [now]
@@ -241,4 +211,3 @@ exports.cleanupExpiredStories = async (req, res) => {
     });
   }
 };
-
