@@ -96,7 +96,6 @@ export const messageAPI = {
   getConversations: () => api.get('/messages/conversations'),
   getMessages: (userId, params) => api.get(`/messages/${userId}`, { params }),
   sendMessage: (data) => api.post('/messages', data),
-  markAsRead: (messageId) => api.put(`/messages/${messageId}/read`),
   markAllAsRead: (userId) => api.put(`/messages/user/${userId}/read-all`),
   getUnreadCount: () => api.get('/messages/unread-count'),
 };
@@ -106,7 +105,6 @@ export const notificationAPI = {
   getNotifications: (params) => api.get('/notifications', { params }),
   getUnreadCount: () => api.get('/notifications/unread-count'),
   markAllAsRead: () => api.put('/notifications/read'),
-  markAsRead: (id) => api.put(`/notifications/${id}/read`),
   deleteNotification: (id) => api.delete(`/notifications/${id}`),
 };
 
