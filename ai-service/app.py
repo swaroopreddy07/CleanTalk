@@ -43,23 +43,11 @@ _startup_time: float = 0.0
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan handler — loads model on startup."""
+    """Application lifespan handler — lazy loading, no models loaded at startup."""
     global _startup_time
-    logger.info("Starting AI Moderation Microservice...")
+    logger.info("Starting AI Moderation Microservice (lazy loading mode)...")
     _startup_time = time.time()
-
-    try:
-        load_model()
-        logger.info("Text model loaded successfully.")
-    except RuntimeError as exc:
-        logger.critical("Failed to load text model: %s", exc)
-        raise
-
-    try:
-        load_image_model()
-        logger.info("Image model loaded successfully. Service is ready.")
-    except RuntimeError as exc:
-        logger.warning("Image model failed to load (non-fatal): %s", exc)
+    logger.info("Server ready. Models will load on first request.")
 
     yield  # Application runs here
 
@@ -202,13 +190,18 @@ async def predict_toxicity(request: PredictRequest) -> PredictResponse:
         len(request.text),
     )
 
-    # Guard: model must be loaded
+    # Lazy load: load text model on first request
     if not is_model_loaded():
-        logger.error("Prediction request rejected — model not loaded.")
-        raise HTTPException(
-            status_code=503,
-            detail="Model is not loaded. Service is starting up or encountered an error.",
-        )
+        logger.info("Text model not loaded yet — loading now (first request)...")
+        try:
+            load_model()
+            logger.info("Text model loaded successfully (lazy).")
+        except RuntimeError as exc:
+            logger.error("Failed to load text model: %s", exc)
+            raise HTTPException(
+                status_code=503,
+                detail=f"Failed to load text model: {exc}",
+            )
 
     try:
         result: dict[str, Any] = predict(request.text)
@@ -267,11 +260,18 @@ async def predict_image_endpoint(request: ImagePredictRequest) -> ImagePredictRe
 
     logger.info("Received image prediction request — url=%s", request.image_url[:100])
 
+    # Lazy load: load image model on first request
     if not is_image_model_loaded():
-        raise HTTPException(
-            status_code=503,
-            detail="Image model is not loaded.",
-        )
+        logger.info("Image model not loaded yet — loading now (first request)...")
+        try:
+            load_image_model()
+            logger.info("Image model loaded successfully (lazy).")
+        except RuntimeError as exc:
+            logger.error("Failed to load image model: %s", exc)
+            raise HTTPException(
+                status_code=503,
+                detail=f"Failed to load image model: {exc}",
+            )
 
     try:
         # Download image

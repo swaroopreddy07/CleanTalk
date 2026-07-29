@@ -176,6 +176,12 @@ def process_job(job_id: str, job_data: dict, pub_redis: redis_sync.Redis, db_poo
         image_url = job_data.get("imageUrl", "")
         logger.info(f"Image moderation job: {image_url[:100]}")
         
+        # Lazy load image model on first image job
+        if not is_image_model_loaded():
+            logger.info("Image model not loaded — loading now (first image job)...")
+            load_image_model()
+            logger.info("Image model loaded successfully (lazy).")
+        
         import requests as http_requests
         try:
             # Download the image
@@ -201,6 +207,12 @@ def process_job(job_id: str, job_data: dict, pub_redis: redis_sync.Redis, db_poo
             labels = {"error": str(img_err)}
             prediction = "error"
     else:
+        # Lazy load text model on first text job
+        if not is_model_loaded():
+            logger.info("Text model not loaded — loading now (first text job)...")
+            load_model()
+            logger.info("Text model loaded successfully (lazy).")
+        
         # Text moderation (existing flow)
         result = predict(content)
         toxicity_score = result["toxicity_score"]
@@ -309,17 +321,8 @@ async def main():
     logger.info(f"Starting AI Moderation Worker: {WORKER_ID}")
     logger.info(f"Queue: {QUEUE_NAME}, Max Retries: {MAX_RETRIES}")
 
-    # 1. Load models
-    logger.info("Loading Toxic-BERT model...")
-    load_model()
-    logger.info("Text model loaded successfully!")
-    
-    logger.info("Loading NSFW image detection model...")
-    try:
-        load_image_model()
-        logger.info("Image model loaded successfully!")
-    except Exception as e:
-        logger.warning(f"Image model failed to load (non-fatal): {e}")
+    # 1. Models use lazy loading — loaded on first job (see process_job)
+    logger.info("Models will be loaded lazily on first job.")
 
     # 2. Connect Redis for pub/sub
     pub_redis = create_redis_pubsub_client()
