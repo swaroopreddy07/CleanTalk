@@ -1,0 +1,40 @@
+# ─────────────────────────────────────────────────────────────
+# AI Moderation Worker — Production Dockerfile
+# ─────────────────────────────────────────────────────────────
+# Consumes moderation jobs from BullMQ (Redis) queue,
+# runs Toxic-BERT inference, and updates MySQL.
+# ─────────────────────────────────────────────────────────────
+
+FROM python:3.10-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install system dependencies required by torch & transformers
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies (same approach as main Dockerfile)
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip
+
+# Install PyTorch CPU-only build separately (not on PyPI default)
+RUN pip install --no-cache-dir \
+    torch==2.3.1 \
+    --index-url https://download.pytorch.org/whl/cpu
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy ALL application code (worker needs config.py, model.py, worker.py)
+COPY . .
+
+# Health check — worker.py creates this file after model loads
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=120s \
+    CMD test -f /tmp/worker_healthy || exit 1
+
+CMD ["python", "worker.py"]

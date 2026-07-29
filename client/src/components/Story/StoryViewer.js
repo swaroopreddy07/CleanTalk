@@ -19,7 +19,7 @@ const StoryViewer = ({ open, onClose, storyGroup, allStories }) => {
   const [currentUserIndex, setCurrentUserIndex] = useState(0);
   const [progress, setProgress] = useState(0);
 
-  const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+  const API_URL = (process.env.REACT_APP_API_URL || 'http://localhost:5000').replace(/\/api\/?$/, '');
 
   useEffect(() => {
     if (storyGroup) {

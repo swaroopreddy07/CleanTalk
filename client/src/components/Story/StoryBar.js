@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Avatar, Typography, IconButton, Dialog } from '@mui/material';
-import { Add as AddIcon } from '@mui/icons-material';
+import { Box, Avatar, Typography, IconButton } from '@mui/material';
+import { Add as AddIcon, ChevronRight } from '@mui/icons-material';
 import { storyAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import StoryViewer from './StoryViewer';
@@ -12,174 +12,99 @@ const StoryBar = () => {
   const [selectedStory, setSelectedStory] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
 
-  const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+  const API_URL = (process.env.REACT_APP_API_URL || 'http://localhost:5000').replace(/\/api\/?$/, '');
 
-  useEffect(() => {
-    loadStories();
-  }, []);
+  useEffect(() => { loadStories(); }, []);
 
   const loadStories = async () => {
     try {
       const response = await storyAPI.getStories();
       const allStories = response.data.stories || [];
-      
-      // Separate user's own stories from other users' stories
-      const ownStories = allStories.filter(story => Boolean(story.is_own));
-      const otherStories = allStories.filter(story => !Boolean(story.is_own));
-      
-      // Sort other stories by creation date (oldest first, newest on right)
-      const sortedOtherStories = otherStories.sort((a, b) => {
-        const aDate = new Date(a.stories[0]?.created_at || 0);
-        const bDate = new Date(b.stories[0]?.created_at || 0);
-        return aDate - bDate; // Ascending order - oldest first, newest last (right side)
-      });
-      
-      // Combine them with own stories first, then others in chronological order
-      setStories([...ownStories, ...sortedOtherStories]);
-    } catch (error) {
-      console.error('Load stories error:', error);
-    }
-  };
-
-  const handleStoryCreated = (newStory) => {
-    loadStories();
+      const ownStories = allStories.filter(s => Boolean(s.is_own));
+      const otherStories = allStories.filter(s => !Boolean(s.is_own));
+      const sorted = otherStories.sort((a, b) => new Date(a.stories[0]?.created_at || 0) - new Date(b.stories[0]?.created_at || 0));
+      setStories([...ownStories, ...sorted]);
+    } catch (error) { console.error('Load stories error:', error); }
   };
 
   return (
     <>
-      <Box
-        sx={{
-          display: 'flex',
-          gap: 2,
-          p: 2,
-          bgcolor: 'background.paper',
-          borderRadius: 2,
-          mb: 3,
-          overflowX: 'auto',
-          '&::-webkit-scrollbar': { height: 8 },
-          '&::-webkit-scrollbar-thumb': {
-            bgcolor: 'rgba(0,0,0,0.2)',
-            borderRadius: 4,
-          },
-        }}
-      >
-        {/* Your Story - Show only if user has no stories */}
-        {!stories.some(story => Boolean(story.is_own)) && (
-          <Box
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              minWidth: 80,
-              cursor: 'pointer',
-            }}
-            onClick={() => setCreateOpen(true)}
-          >
+      <Box sx={{
+        display: 'flex', gap: 2, py: 2, px: 1, mb: 2,
+        borderRadius: 2, overflowX: 'auto', position: 'relative',
+        border: '1px solid #262626',
+        bgcolor: '#000',
+        '&::-webkit-scrollbar': { display: 'none' },
+      }}>
+        {/* Your Story */}
+        {!stories.some(s => Boolean(s.is_own)) && (
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 66, cursor: 'pointer' }}
+            onClick={() => setCreateOpen(true)}>
             <Box sx={{ position: 'relative' }}>
-              <Avatar 
+              <Avatar
                 src={user?.profile_picture ? (user.profile_picture.startsWith('http') ? user.profile_picture : `${API_URL}${user.profile_picture}`) : ''}
-                sx={{ width: 56, height: 56 }} 
+                sx={{ width: 56, height: 56, border: '2px solid #363636' }}
               />
-              <IconButton
-                size="small"
-                sx={{
-                  position: 'absolute',
-                  bottom: -4,
-                  right: -4,
-                  bgcolor: 'primary.main',
-                  color: 'white',
-                  width: 24,
-                  height: 24,
-                  '&:hover': { bgcolor: 'primary.dark' },
-                }}
-              >
-                <AddIcon fontSize="small" />
-              </IconButton>
+              <Box sx={{
+                position: 'absolute', bottom: -2, right: -2,
+                width: 20, height: 20, borderRadius: '50%',
+                bgcolor: '#0095F6', border: '2px solid #000',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <AddIcon sx={{ fontSize: 14, color: '#fff' }} />
+              </Box>
             </Box>
-            <Typography variant="caption" sx={{ mt: 0.5, textAlign: 'center' }}>
+            <Typography variant="caption" sx={{ mt: 0.5, textAlign: 'center', color: '#A8A8A8', fontSize: '0.65rem' }}>
               Your story
             </Typography>
           </Box>
         )}
 
         {/* All Stories */}
-        {stories.map((storyGroup) => (
-          <Box
-            key={storyGroup.user_id}
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              minWidth: 80,
-              cursor: 'pointer',
-            }}
-            onClick={() => setSelectedStory(storyGroup)}
-          >
+        {stories.map(storyGroup => (
+          <Box key={storyGroup.user_id}
+            sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 66, cursor: 'pointer' }}
+            onClick={() => setSelectedStory(storyGroup)}>
             <Box sx={{ position: 'relative' }}>
-              <Avatar
-                src={storyGroup.profile_picture ? (storyGroup.profile_picture.startsWith('http') ? storyGroup.profile_picture : `${API_URL}${storyGroup.profile_picture}`) : ''}
-                sx={{
-                  width: 56,
-                  height: 56,
-                  border: '2px solid',
-                  borderColor: 'primary.main',
-                }}
-              />
-              {/* Show add button for user's own stories */}
+              {/* Gradient ring */}
+              <Box sx={{
+                width: 62, height: 62, borderRadius: '50%',
+                background: 'linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Box sx={{ width: 58, height: 58, borderRadius: '50%', bgcolor: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Avatar
+                    src={storyGroup.profile_picture ? (storyGroup.profile_picture.startsWith('http') ? storyGroup.profile_picture : `${API_URL}${storyGroup.profile_picture}`) : ''}
+                    sx={{ width: 54, height: 54 }}
+                  />
+                </Box>
+              </Box>
               {Boolean(storyGroup.is_own) && (
-                <IconButton
-                  size="small"
-                  sx={{
-                    position: 'absolute',
-                    bottom: -4,
-                    right: -4,
-                    bgcolor: 'primary.main',
-                    color: 'white',
-                    width: 24,
-                    height: 24,
-                    '&:hover': { bgcolor: 'primary.dark' },
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setCreateOpen(true);
-                  }}
-                >
-                  <AddIcon fontSize="small" />
-                </IconButton>
+                <Box sx={{
+                  position: 'absolute', bottom: -2, right: -2,
+                  width: 20, height: 20, borderRadius: '50%',
+                  bgcolor: '#0095F6', border: '2px solid #000',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+                  onClick={(e) => { e.stopPropagation(); setCreateOpen(true); }}>
+                  <AddIcon sx={{ fontSize: 14, color: '#fff' }} />
+                </Box>
               )}
             </Box>
-            <Typography
-              variant="caption"
-              sx={{
-                mt: 0.5,
-                textAlign: 'center',
-                maxWidth: 80,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
+            <Typography variant="caption" sx={{
+              mt: 0.5, textAlign: 'center', maxWidth: 66,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              color: '#A8A8A8', fontSize: '0.65rem',
+            }}>
               {Boolean(storyGroup.is_own) ? 'Your story' : (storyGroup.username || '')}
             </Typography>
           </Box>
         ))}
       </Box>
 
-      {/* Create Story Dialog */}
-      <CreateStory
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        onStoryCreated={handleStoryCreated}
-      />
-
-      {/* Story Viewer */}
+      <CreateStory open={createOpen} onClose={() => setCreateOpen(false)} onStoryCreated={() => loadStories()} />
       {selectedStory && (
-        <StoryViewer
-          open={!!selectedStory}
-          onClose={() => setSelectedStory(null)}
-          storyGroup={selectedStory}
-          allStories={stories}
-        />
+        <StoryViewer open={!!selectedStory} onClose={() => setSelectedStory(null)} storyGroup={selectedStory} allStories={stories} />
       )}
     </>
   );

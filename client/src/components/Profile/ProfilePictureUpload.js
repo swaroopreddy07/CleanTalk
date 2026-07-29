@@ -20,7 +20,7 @@ const ProfilePictureUpload = ({ open, onClose, currentUser, onUpdate }) => {
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+  const API_URL = (process.env.REACT_APP_API_URL || 'http://localhost:5000').replace(/\/api\/?$/, '');
 
   const handleFileSelect = (event) => {
     const file = event.target.files[0];

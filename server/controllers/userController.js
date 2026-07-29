@@ -552,6 +552,99 @@ const rejectFollowRequest = async (req, res) => {
   }
 };
 
+// ─── Block User ──────────────────────────────────────────────
+const blockUser = async (req, res) => {
+  try {
+    const blockerId = req.user.id;
+    const blockedId = parseInt(req.params.id);
+    if (blockerId === blockedId) return res.status(400).json({ success: false, message: 'Cannot block yourself' });
+
+    await db.execute('INSERT IGNORE INTO blocked_users (blocker_id, blocked_id) VALUES (?, ?)', [blockerId, blockedId]);
+    // Also unfollow each other
+    await db.execute('DELETE FROM followers WHERE (follower_id = ? AND following_id = ?) OR (follower_id = ? AND following_id = ?)', [blockerId, blockedId, blockedId, blockerId]);
+
+    res.json({ success: true, message: 'User blocked' });
+  } catch (error) {
+    console.error('Block user error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// ─── Unblock User ────────────────────────────────────────────
+const unblockUser = async (req, res) => {
+  try {
+    const blockerId = req.user.id;
+    const blockedId = parseInt(req.params.id);
+    await db.execute('DELETE FROM blocked_users WHERE blocker_id = ? AND blocked_id = ?', [blockerId, blockedId]);
+    res.json({ success: true, message: 'User unblocked' });
+  } catch (error) {
+    console.error('Unblock user error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// ─── Get Blocked Users ───────────────────────────────────────
+const getBlockedUsers = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const [blocked] = await db.execute(
+      `SELECT b.id, b.blocked_id, u.username, u.display_name, u.profile_picture, b.created_at
+       FROM blocked_users b
+       JOIN users u ON b.blocked_id = u.id
+       WHERE b.blocker_id = ?
+       ORDER BY b.created_at DESC`,
+      [userId]
+    );
+    res.json({ success: true, blocked });
+  } catch (error) {
+    console.error('Get blocked users error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// ─── Update Privacy Settings ─────────────────────────────────
+const updatePrivacy = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { is_private, message_privacy } = req.body;
+
+    const updates = [];
+    const values = [];
+
+    if (typeof is_private === 'boolean') { updates.push('is_private = ?'); values.push(is_private); }
+    if (message_privacy && ['everyone', 'followers', 'nobody'].includes(message_privacy)) {
+      updates.push('message_privacy = ?'); values.push(message_privacy);
+    }
+
+    if (updates.length === 0) return res.status(400).json({ success: false, message: 'No valid fields to update' });
+
+    values.push(userId);
+    await db.execute(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, values);
+
+    res.json({ success: true, message: 'Privacy settings updated' });
+  } catch (error) {
+    console.error('Update privacy error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// ─── Update Theme ────────────────────────────────────────────
+const updateTheme = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { theme } = req.body;
+    if (!theme || !['dark', 'light'].includes(theme)) {
+      return res.status(400).json({ success: false, message: 'Invalid theme' });
+    }
+
+    await db.execute('UPDATE users SET theme = ? WHERE id = ?', [theme, userId]);
+    res.json({ success: true, message: 'Theme updated', theme });
+  } catch (error) {
+    console.error('Update theme error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
 module.exports = {
   getUsers,
   searchUsers,
@@ -564,5 +657,10 @@ module.exports = {
   getSuggestions,
   getFollowRequests,
   acceptFollowRequest,
-  rejectFollowRequest
+  rejectFollowRequest,
+  blockUser,
+  unblockUser,
+  getBlockedUsers,
+  updatePrivacy,
+  updateTheme
 };

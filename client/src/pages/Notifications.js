@@ -1,268 +1,182 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Box,
-  List,
-  ListItem,
-  ListItemAvatar,
-  ListItemText,
-  Avatar,
-  Typography,
-  Button,
-  Divider,
-  IconButton,
-  CircularProgress,
-} from '@mui/material';
+import { Box, Avatar, Typography, IconButton, CircularProgress, Button } from '@mui/material';
 import { Delete as DeleteIcon } from '@mui/icons-material';
 import { formatDistanceToNow } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout/Layout';
 import { notificationAPI, userAPI } from '../services/api';
 
+const getText = (n) => {
+  switch (n.type) {
+    case 'like': return 'liked your photo.';
+    case 'comment': return `commented: ${n.message || n.content || ''}`;
+    case 'follow': return 'started following you.';
+    case 'follow_request': return 'sent you a follow request.';
+    case 'follow_accepted': return 'accepted your follow request.';
+    case 'mention': return `mentioned you: ${n.message || n.content || ''}`;
+    default: return 'interacted with your content.';
+  }
+};
+
 const Notifications = () => {
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState({});
+  const [handledRequests, setHandledRequests] = useState({});
+  const [followRequestMap, setFollowRequestMap] = useState({});
+  const API_URL = (process.env.REACT_APP_API_URL || 'http://localhost:5000').replace(/\/api\/?$/, '');
 
-  const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+  useEffect(() => { load(); markRead(); loadFollowRequests(); }, []);
 
-  useEffect(() => {
-    loadNotifications();
-    markAllAsRead();
-  }, []);
+  const load = async () => {
+    try { const r = await notificationAPI.getNotifications(); setNotifications(r.data.notifications || []); }
+    catch (e) { setNotifications([]); } finally { setLoading(false); }
+  };
+  const markRead = async () => { try { await notificationAPI.markAllAsRead(); } catch (e) {} };
 
-  const loadNotifications = async () => {
+  // Load pending follow requests to get the actual follower row IDs
+  const loadFollowRequests = async () => {
     try {
-      const response = await notificationAPI.getNotifications();
-      setNotifications(response.data.notifications || []);
-    } catch (error) {
-      console.error('Load notifications error:', error);
-      setNotifications([]);
-    } finally {
-      setLoading(false);
-    }
+      const r = await userAPI.getFollowRequests();
+      const requests = r.data.requests || [];
+      // Map sender user_id -> followers table row id
+      const map = {};
+      requests.forEach(req => { map[req.user_id] = req.id; });
+      setFollowRequestMap(map);
+    } catch (e) { console.error('Load follow requests error:', e); }
   };
 
-  const markAllAsRead = async () => {
-    try {
-      await notificationAPI.markAllAsRead();
-    } catch (error) {
-      console.error('Mark all as read error:', error);
+  const handleAccept = async (notification) => {
+    // Get the followers table row ID from the map using sender_id
+    const requestId = followRequestMap[notification.sender_id];
+    if (!requestId) {
+      alert('Follow request may have already been handled or expired.');
+      return;
     }
+    setActionLoading(prev => ({ ...prev, [notification.id]: 'accepting' }));
+    try {
+      await userAPI.acceptFollowRequest(requestId);
+      setHandledRequests(prev => ({ ...prev, [notification.id]: 'accepted' }));
+      // Remove from map since it's handled
+      setFollowRequestMap(prev => { const copy = { ...prev }; delete copy[notification.sender_id]; return copy; });
+    } catch (e) {
+      alert(e.response?.data?.message || 'Failed to accept request');
+    } finally { setActionLoading(prev => ({ ...prev, [notification.id]: null })); }
+  };
+
+  const handleReject = async (notification) => {
+    const requestId = followRequestMap[notification.sender_id];
+    if (!requestId) {
+      alert('Follow request may have already been handled or expired.');
+      return;
+    }
+    setActionLoading(prev => ({ ...prev, [notification.id]: 'rejecting' }));
+    try {
+      await userAPI.rejectFollowRequest(requestId);
+      setHandledRequests(prev => ({ ...prev, [notification.id]: 'rejected' }));
+      setFollowRequestMap(prev => { const copy = { ...prev }; delete copy[notification.sender_id]; return copy; });
+    } catch (e) {
+      alert(e.response?.data?.message || 'Failed to decline request');
+    } finally { setActionLoading(prev => ({ ...prev, [notification.id]: null })); }
   };
 
   const handleDelete = async (id) => {
-    try {
-      await notificationAPI.deleteNotification(id);
-      setNotifications(notifications.filter((n) => n.id !== id));
-    } catch (error) {
-      console.error('Delete notification error:', error);
-    }
+    try { await notificationAPI.deleteNotification(id); setNotifications(notifications.filter(n => n.id !== id)); } catch (e) {}
   };
 
-  const handleNotificationClick = (notification) => {
-    if (notification.type === 'follow') {
-      navigate(`/${notification.sender_username}`);
-    } else if (notification.post_id) {
-      navigate(`/post/${notification.post_id}`);
-    }
+  const handleClick = (n) => {
+    if (n.type === 'follow' || n.type === 'follow_accepted') navigate(`/${n.sender_username}`);
+    else if (n.post_id) navigate(`/post/${n.post_id}`);
   };
 
-  const getNotificationText = (notification) => {
-    switch (notification.type) {
-      case 'like':
-        return 'liked your photo';
-      case 'comment':
-        return `commented: ${notification.message || notification.content || 'on your post'}`;
-      case 'follow':
-        return 'started following you';
-      case 'follow_request':
-        return 'sent you a follow request';
-      case 'follow_accepted':
-        return 'accepted your follow request';
-      case 'mention':
-        return `mentioned you in a comment: ${notification.message || notification.content || ''}`;
-      default:
-        return 'interacted with your content';
-    }
-  };
-
-  const getNotificationIcon = (type) => {
-    switch (type) {
-      case 'like':
-        return '❤️';
-      case 'comment':
-        return '💬';
-      case 'follow':
-        return '👤';
-      case 'follow_request':
-        return '👥';
-      case 'follow_accepted':
-        return '✅';
-      case 'mention':
-        return '📝';
-      default:
-        return '🔔';
-    }
-  };
-
-  if (loading) {
-    return (
-      <Layout>
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight="50vh">
-          <CircularProgress />
-        </Box>
-      </Layout>
-    );
-  }
+  if (loading) return <Layout><Box display="flex" justifyContent="center" py={8}><CircularProgress sx={{ color: '#A8A8A8' }} /></Box></Layout>;
 
   return (
     <Layout>
       <Box sx={{ maxWidth: 600, mx: 'auto' }}>
-        <Box
-          sx={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            mb: 2,
-          }}
-        >
-          <Typography variant="h5" fontWeight={600}>
-            Notifications
-          </Typography>
-          {notifications.length > 0 && (
-            <Button
-              size="small"
-              onClick={markAllAsRead}
-              sx={{ color: 'primary.main' }}
-            >
-              Mark all read
-            </Button>
-          )}
-        </Box>
+        <Typography variant="h5" sx={{ fontWeight: 700, mb: 3 }}>Notifications</Typography>
 
         {notifications.length === 0 ? (
-          <Box
-            sx={{
-              textAlign: 'center',
-              py: 8,
-              bgcolor: 'background.paper',
-              borderRadius: 2,
-            }}
-          >
-            <Typography variant="h6" gutterBottom>
-              No notifications yet
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              When someone likes or comments on your posts, you'll see it here
-            </Typography>
+          <Box textAlign="center" py={8}>
+            <Typography sx={{ color: '#A8A8A8' }}>No notifications yet</Typography>
           </Box>
         ) : (
-          <List sx={{ bgcolor: 'background.paper', borderRadius: 2 }}>
-            {notifications.map((notification, index) => (
-              <React.Fragment key={notification.id}>
-                <ListItem
-                  alignItems="flex-start"
-                  sx={{
-                    cursor: 'pointer',
-                    '&:hover': { bgcolor: 'action.hover' },
-                    bgcolor: notification.is_read ? 'transparent' : 'action.selected',
-                  }}
-                  onClick={() => handleNotificationClick(notification)}
-                  secondaryAction={
-                    <IconButton
-                      edge="end"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(notification.id);
-                      }}
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  }
-                >
-                  <ListItemAvatar>
-                    <Box sx={{ position: 'relative' }}>
-                      <Avatar
-                        src={
-                          notification.sender_profile_picture
-                            ? (notification.sender_profile_picture.startsWith('http') 
-                                ? notification.sender_profile_picture 
-                                : `${API_URL}${notification.sender_profile_picture}`)
-                            : ''
-                        }
-                        alt={notification.sender_username}
-                        onError={(e) => {
-                          console.error('❌ Notification profile picture failed to load:', notification.sender_profile_picture);
-                          e.target.style.display = 'none';
-                        }}
-                        onLoad={() => {
-                          console.log('✅ Notification profile picture loaded:', notification.sender_profile_picture);
-                        }}
-                      >
-                        {notification.sender_username?.[0]?.toUpperCase()}
-                      </Avatar>
-                      <Box
-                        sx={{
-                          position: 'absolute',
-                          bottom: -4,
-                          right: -4,
-                          width: 24,
-                          height: 24,
-                          bgcolor: 'background.paper',
-                          borderRadius: '50%',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: 14,
-                        }}
-                      >
-                        {getNotificationIcon(notification.type)}
-                      </Box>
-                    </Box>
-                  </ListItemAvatar>
-                  <ListItemText
-                    primary={
-                      <Typography variant="body2">
-                        <Typography component="span" fontWeight={600}>
-                          {notification.sender_username}
-                        </Typography>{' '}
-                        {getNotificationText(notification)}
-                      </Typography>
-                    }
-                    secondary={formatDistanceToNow(new Date(notification.created_at), {
-                      addSuffix: true,
-                    })}
-                  />
-                  {notification.post_image && (
-                    <Box
-                      component="img"
-                      src={
-                        notification.post_image.startsWith('http') 
-                          ? notification.post_image 
-                          : `${API_URL}${notification.post_image}`
-                      }
-                      alt="Post"
-                      sx={{
-                        width: 44,
-                        height: 44,
-                        objectFit: 'cover',
-                        borderRadius: 1,
-                        ml: 2,
-                      }}
-                      onError={(e) => {
-                        console.error('❌ Notification post image failed to load:', notification.post_image);
-                        e.target.style.display = 'none';
-                      }}
-                      onLoad={() => {
-                        console.log('✅ Notification post image loaded:', notification.post_image);
-                      }}
-                    />
+          notifications.map(n => {
+            const hasPendingRequest = n.type === 'follow_request' && followRequestMap[n.sender_id] && !handledRequests[n.id];
+            return (
+              <Box key={n.id}
+                sx={{
+                  display: 'flex', alignItems: 'center', gap: 1.5, py: 1.5, px: 1, borderRadius: 1,
+                  bgcolor: n.is_read ? 'transparent' : 'rgba(255,255,255,0.03)',
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' },
+                }}>
+                <Avatar
+                  src={n.sender_profile_picture ? (n.sender_profile_picture.startsWith('http') ? n.sender_profile_picture : `${API_URL}${n.sender_profile_picture}`) : ''}
+                  onClick={() => navigate(`/${n.sender_username}`)}
+                  sx={{ width: 44, height: 44, cursor: 'pointer', flexShrink: 0 }}>
+                  {n.sender_username?.[0]?.toUpperCase()}
+                </Avatar>
+
+                <Box flex={1} minWidth={0} onClick={() => n.type !== 'follow_request' && handleClick(n)}
+                  sx={{ cursor: n.type !== 'follow_request' ? 'pointer' : 'default' }}>
+                  <Typography variant="body2">
+                    <Typography component="span" sx={{ fontWeight: 600, cursor: 'pointer' }}
+                      onClick={(e) => { e.stopPropagation(); navigate(`/${n.sender_username}`); }}>
+                      {n.sender_username}
+                    </Typography>
+                    {' '}{getText(n)}{' '}
+                    <Typography component="span" sx={{ color: '#A8A8A8' }}>
+                      {formatDistanceToNow(new Date(n.created_at), { addSuffix: false })}
+                    </Typography>
+                  </Typography>
+
+                  {/* Status after handling */}
+                  {handledRequests[n.id] === 'accepted' && (
+                    <Typography variant="caption" sx={{ color: '#4ade80', mt: 0.3, display: 'block' }}>
+                      ✓ Follow request accepted
+                    </Typography>
                   )}
-                </ListItem>
-                {index < notifications.length - 1 && <Divider variant="inset" component="li" />}
-              </React.Fragment>
-            ))}
-          </List>
+                  {handledRequests[n.id] === 'rejected' && (
+                    <Typography variant="caption" sx={{ color: '#A8A8A8', mt: 0.3, display: 'block' }}>
+                      Follow request declined
+                    </Typography>
+                  )}
+                </Box>
+
+                {/* Accept/Decline buttons for pending follow requests */}
+                {hasPendingRequest && (
+                  <Box display="flex" gap={1} flexShrink={0}>
+                    <Button size="small" variant="contained"
+                      onClick={(e) => { e.stopPropagation(); handleAccept(n); }}
+                      disabled={!!actionLoading[n.id]}
+                      sx={{ bgcolor: '#0095F6', fontWeight: 600, fontSize: '0.75rem', borderRadius: 2, px: 2, py: 0.5, minWidth: 0, textTransform: 'none', '&:hover': { bgcolor: '#1877F2' } }}>
+                      {actionLoading[n.id] === 'accepting' ? '...' : 'Confirm'}
+                    </Button>
+                    <Button size="small" variant="contained"
+                      onClick={(e) => { e.stopPropagation(); handleReject(n); }}
+                      disabled={!!actionLoading[n.id]}
+                      sx={{ bgcolor: '#363636', color: '#F5F5F5', fontWeight: 600, fontSize: '0.75rem', borderRadius: 2, px: 2, py: 0.5, minWidth: 0, textTransform: 'none', '&:hover': { bgcolor: '#464646' } }}>
+                      {actionLoading[n.id] === 'rejecting' ? '...' : 'Delete'}
+                    </Button>
+                  </Box>
+                )}
+
+                {/* Post thumbnail */}
+                {n.post_image && (
+                  <Box component="img"
+                    src={n.post_image.startsWith('http') ? n.post_image : `${API_URL}${n.post_image}`}
+                    alt="" sx={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 0.5, flexShrink: 0, cursor: 'pointer' }}
+                    onClick={() => handleClick(n)} onError={(e) => { e.target.style.display = 'none'; }} />
+                )}
+
+                <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleDelete(n.id); }}
+                  sx={{ color: '#A8A8A8', flexShrink: 0, '&:hover': { color: '#ED4956' } }}>
+                  <DeleteIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Box>
+            );
+          })
         )}
       </Box>
     </Layout>

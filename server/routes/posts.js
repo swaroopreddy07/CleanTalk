@@ -18,7 +18,10 @@ const {
   unsavePost,
   getSavedPosts,
   getLikedPosts,
-  getCommentedPosts
+  getCommentedPosts,
+  reactToPost,
+  getReactions,
+  previewComment
 } = require('../controllers/postController');
 const protect = require('../middleware/auth');
 const upload = require('../middleware/upload');
@@ -37,8 +40,12 @@ router.delete('/:postId', deletePost);
 router.post('/:postId/like', likePost);
 router.delete('/:postId/unlike', unlikePost);
 
+router.post('/:postId/react', reactToPost);
+router.get('/:postId/reactions', getReactions);
+
 router.post('/:postId/comment', addComment);
 router.get('/:postId/comments', getComments);
+router.post('/:postId/comments/preview', previewComment);
 
 router.post('/:postId/save', savePost);
 router.delete('/:postId/unsave', unsavePost);

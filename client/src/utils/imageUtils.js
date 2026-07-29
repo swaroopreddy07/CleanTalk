@@ -20,8 +20,12 @@ export const getImageUrl = (imageUrl, baseUrl = process.env.REACT_APP_API_URL ||
     return imageUrl;
   }
   
+  // Strip '/api' suffix from base URL for file paths (uploads, etc.)
+  // Files are served at the root (e.g., /uploads/), not under /api/
+  const fileBaseUrl = baseUrl.replace(/\/api\/?$/, '');
+  
   // Otherwise, construct the full URL
-  return `${baseUrl}${imageUrl}`;
+  return `${fileBaseUrl}${imageUrl}`;
 };
 
 /**

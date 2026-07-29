@@ -1,22 +1,11 @@
 /**
- * SocialConnect App Component
+ * CleanTalk App Component
  * 
- * Main application component that sets up the React Router, theme provider,
- * authentication context, and Socket.IO context for the entire application.
+ * AI-Powered Safe Social Networking platform.
+ * Main application component with React Router, MUI theme, auth, and Socket.IO.
  * 
- * Features:
- * - React Router setup with protected routes
- * - Material-UI theme provider with custom styling
- * - Authentication context for user state management
- * - Socket.IO context for real-time features
- * - Route protection for authenticated users
- * 
- * Routes:
- * - Public: /login, /register
- * - Protected: / (home), /messages, /notifications, /search, /activity, /saved, /:username
- * 
- * @author SocialConnect Team
- * @version 1.0.0
+ * @author CleanTalk Team
+ * @version 2.0.0
  */
 
 import React from 'react';
@@ -38,13 +27,8 @@ import Notifications from './pages/Notifications';
 import Search from './pages/Search';
 import Activity from './pages/Activity';
 import Saved from './pages/Saved';
+import Settings from './pages/Settings';
 
-/**
- * Main App Component
- * 
- * Renders the complete application with all providers and routing configuration.
- * Sets up the component hierarchy and manages global state providers.
- */
 function App() {
   return (
     <ThemeProvider theme={theme}>
@@ -53,76 +37,21 @@ function App() {
         <SocketProvider>
           <Router>
             <Routes>
-              {/* Public Routes - No authentication required */}
+              {/* Public Routes */}
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               
-              {/* Protected Routes - Authentication required */}
-              <Route
-                path="/"
-                element={
-                  <PrivateRoute>
-                    <Home />
-                  </PrivateRoute>
-                }
-              />
+              {/* Protected Routes */}
+              <Route path="/" element={<PrivateRoute><Home /></PrivateRoute>} />
+              <Route path="/messages" element={<PrivateRoute><Messages /></PrivateRoute>} />
+              <Route path="/notifications" element={<PrivateRoute><Notifications /></PrivateRoute>} />
+              <Route path="/search" element={<PrivateRoute><Search /></PrivateRoute>} />
+              <Route path="/activity" element={<PrivateRoute><Activity /></PrivateRoute>} />
+              <Route path="/saved" element={<PrivateRoute><Saved /></PrivateRoute>} />
+              <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
+              <Route path="/:username" element={<PrivateRoute><Profile /></PrivateRoute>} />
               
-              <Route
-                path="/messages"
-                element={
-                  <PrivateRoute>
-                    <Messages />
-                  </PrivateRoute>
-                }
-              />
-              
-              <Route
-                path="/notifications"
-                element={
-                  <PrivateRoute>
-                    <Notifications />
-                  </PrivateRoute>
-                }
-              />
-              
-              <Route
-                path="/search"
-                element={
-                  <PrivateRoute>
-                    <Search />
-                  </PrivateRoute>
-                }
-              />
-              
-              <Route
-                path="/activity"
-                element={
-                  <PrivateRoute>
-                    <Activity />
-                  </PrivateRoute>
-                }
-              />
-              
-              <Route
-                path="/saved"
-                element={
-                  <PrivateRoute>
-                    <Saved />
-                  </PrivateRoute>
-                }
-              />
-              
-              {/* Dynamic User Profile Route */}
-              <Route
-                path="/:username"
-                element={
-                  <PrivateRoute>
-                    <Profile />
-                  </PrivateRoute>
-                }
-              />
-              
-              {/* Fallback Route - Redirect to home */}
+              {/* Fallback */}
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Router>

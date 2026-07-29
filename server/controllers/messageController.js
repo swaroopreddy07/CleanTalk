@@ -102,6 +102,7 @@ exports.getMessages = async (req, res) => {
 
     const [messages] = await db.query(
       `SELECT m.*, 
+       m.is_delivered, m.read_at,
        s.username as sender_username,
        s.profile_picture as sender_profile_picture,
        s.display_name as sender_display_name
@@ -114,8 +115,9 @@ exports.getMessages = async (req, res) => {
       [userId, otherUserId, otherUserId, userId, parseInt(limit), parseInt(offset)]
     );
 
+    // Mark as read + set read_at timestamp
     await db.query(
-      'UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ? AND is_read = 0',
+      'UPDATE messages SET is_read = 1, read_at = NOW() WHERE sender_id = ? AND receiver_id = ? AND is_read = 0',
       [otherUserId, userId]
     );
 

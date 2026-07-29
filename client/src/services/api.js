@@ -37,6 +37,8 @@ api.interceptors.response.use(
 
 // Auth API
 export const authAPI = {
+  sendOTP: (data) => api.post('/auth/send-otp', data),
+  verifyOTP: (data) => api.post('/auth/verify-otp', data),
   register: (data) => api.post('/auth/register', data),
   login: (data) => api.post('/auth/login', data),
   getCurrentUser: () => api.get('/auth/me'),
@@ -68,6 +70,13 @@ export const userAPI = {
   getFollowRequests: () => api.get('/users/follow-requests'),
   acceptFollowRequest: (requestId) => api.post(`/users/follow-requests/${requestId}/accept`),
   rejectFollowRequest: (requestId) => api.post(`/users/follow-requests/${requestId}/reject`),
+  // Block
+  blockUser: (userId) => api.post(`/users/${userId}/block`),
+  unblockUser: (userId) => api.delete(`/users/${userId}/block`),
+  getBlockedUsers: () => api.get('/users/blocked'),
+  // Privacy & Theme
+  updatePrivacy: (data) => api.put('/users/privacy', data),
+  updateTheme: (data) => api.put('/users/theme', data),
 };
 
 // Post API
@@ -83,12 +92,19 @@ export const postAPI = {
   likePost: (postId) => api.post(`/posts/${postId}/like`),
   unlikePost: (postId) => api.delete(`/posts/${postId}/unlike`),
   addComment: (postId, content) => api.post(`/posts/${postId}/comment`, { content }),
+  getCommentStatus: (commentId) => api.get(`/posts/comments/${commentId}/status`),
   getComments: (postId, params) => api.get(`/posts/${postId}/comments`, { params }),
   savePost: (postId) => api.post(`/posts/${postId}/save`),
   unsavePost: (postId) => api.delete(`/posts/${postId}/unsave`),
   getSavedPosts: () => api.get('/posts/saved'),
   getLikedPosts: () => api.get('/posts/liked'),
   getCommentedPosts: () => api.get('/posts/commented'),
+  // Reactions
+  reactToPost: (postId, type) => api.post(`/posts/${postId}/react`, { type }),
+  getReactions: (postId) => api.get(`/posts/${postId}/reactions`),
+  // Smart content warning
+  previewComment: (postId, content) => api.post(`/posts/${postId}/comments/preview`, { content }),
+  getFeed: (params) => api.get('/posts/feed', { params }),
 };
 
 // Message API
@@ -122,3 +138,9 @@ export const storyAPI = {
 };
 
 export default api;
+
+// Report API
+export const reportAPI = {
+  createReport: (data) => api.post('/reports', data),
+  getReports: (params) => api.get('/reports', { params }),
+};

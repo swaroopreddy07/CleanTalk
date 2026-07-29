@@ -1,0 +1,380 @@
+# =============================================================================
+# SocialConnect v2.0 — Production Architecture
+# =============================================================================
+#
+# 12 Services:
+#   nginx        → Load balancer (port 80)
+#   frontend     → React app (internal)
+#   backend-1/2/3 → Node.js + Express + BullMQ + Redis Cache
+#   redis        → Cache + Queue + Pub/Sub + Socket.IO adapter
+#   db           → MySQL 8.0
+#   ai-service   → FastAPI health check + direct testing
+#   ai-worker-1/2/3 → Toxic-BERT moderation workers
+#   prometheus   → Metrics scraper (port 9090)
+#
+# Usage:
+#   docker-compose up --build
+#   docker-compose up --build -d
+#   docker-compose logs -f ai-worker-1
+#   docker-compose down -v
+# =============================================================================
+
+services:
+  # ─── Load Balancer ────────────────────────────────────────
+  nginx:
+    build: ./nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - backend-1
+      - backend-2
+      - backend-3
+      - frontend
+    restart: unless-stopped
+    networks:
+      - socialconnect
+
+  # ─── Frontend ─────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./client
+      args:
+        - REACT_APP_API_URL=http://localhost/api
+        - REACT_APP_SOCKET_URL=http://localhost
+    depends_on:
+      - backend-1
+    restart: unless-stopped
+    networks:
+      - socialconnect
+
+  # ─── Backend Instance 1 ──────────────────────────────────
+  backend-1:
+    build: ./server
+    environment:
+      - PORT=5000
+      - DB_HOST=db
+      - DB_USER=root
+      - DB_PASSWORD=socialconnect_password
+      - DB_NAME=socialconnect
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=your_jwt_secret_key_change_in_production
+      - JWT_EXPIRE=7d
+      - CLIENT_URL=http://localhost
+      - AI_SERVICE_URL=http://ai-service:8000
+      - NODE_ENV=production
+      - INSTANCE_ID=backend-1
+      - BACKEND_URL=http://backend-1:5000
+      - QUEUE_NAME=content-moderation
+      - EMAIL_USER=cleantalk.verify@gmail.com
+      - EMAIL_PASS=tycsvumipncjsscj
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - server_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - socialconnect
+
+  # ─── Backend Instance 2 ──────────────────────────────────
+  backend-2:
+    build: ./server
+    environment:
+      - PORT=5000
+      - DB_HOST=db
+      - DB_USER=root
+      - DB_PASSWORD=socialconnect_password
+      - DB_NAME=socialconnect
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=your_jwt_secret_key_change_in_production
+      - JWT_EXPIRE=7d
+      - CLIENT_URL=http://localhost
+      - AI_SERVICE_URL=http://ai-service:8000
+      - NODE_ENV=production
+      - INSTANCE_ID=backend-2
+      - BACKEND_URL=http://backend-1:5000
+      - QUEUE_NAME=content-moderation
+      - EMAIL_USER=cleantalk.verify@gmail.com
+      - EMAIL_PASS=tycsvumipncjsscj
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - server_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - socialconnect
+
+  # ─── Backend Instance 3 ──────────────────────────────────
+  backend-3:
+    build: ./server
+    environment:
+      - PORT=5000
+      - DB_HOST=db
+      - DB_USER=root
+      - DB_PASSWORD=socialconnect_password
+      - DB_NAME=socialconnect
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=your_jwt_secret_key_change_in_production
+      - JWT_EXPIRE=7d
+      - CLIENT_URL=http://localhost
+      - AI_SERVICE_URL=http://ai-service:8000
+      - NODE_ENV=production
+      - INSTANCE_ID=backend-3
+      - BACKEND_URL=http://backend-1:5000
+      - QUEUE_NAME=content-moderation
+      - EMAIL_USER=cleantalk.verify@gmail.com
+      - EMAIL_PASS=tycsvumipncjsscj
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - server_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - socialconnect
+
+  # ─── Redis (Cache + Queue + Pub/Sub) ─────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 512mb --maxmemory-policy noeviction --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - socialconnect
+
+  # ─── MySQL Database ──────────────────────────────────────
+  db:
+    image: mysql:8.0
+    ports:
+      - "3307:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=socialconnect_password
+      - MYSQL_DATABASE=socialconnect
+      - MYSQL_CHARSET=utf8mb4
+      - MYSQL_COLLATION=utf8mb4_unicode_ci
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./database/MASTER_SETUP.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-psocialconnect_password"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - socialconnect
+
+  # ─── AI Service (FastAPI — health check + testing) ───────
+  ai-service:
+    build: ./ai-service
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_NAME=unitary/toxic-bert
+      - WARN_THRESHOLD=0.70
+      - BLOCK_THRESHOLD=0.90
+    volumes:
+      - model_cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+    networks:
+      - socialconnect
+
+  # ─── AI Worker 1 ─────────────────────────────────────────
+  ai-worker-1:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile.worker
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DB_HOST=db
+      - DB_USER=root
+      - DB_PASSWORD=socialconnect_password
+      - DB_NAME=socialconnect
+      - WORKER_ID=worker-1
+      - QUEUE_NAME=content-moderation
+      - MAX_RETRIES=3
+      - MODEL_NAME=unitary/toxic-bert
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    volumes:
+      - model_cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/worker_healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+    networks:
+      - socialconnect
+
+  # ─── AI Worker 2 ─────────────────────────────────────────
+  ai-worker-2:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile.worker
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DB_HOST=db
+      - DB_USER=root
+      - DB_PASSWORD=socialconnect_password
+      - DB_NAME=socialconnect
+      - WORKER_ID=worker-2
+      - QUEUE_NAME=content-moderation
+      - MAX_RETRIES=3
+      - MODEL_NAME=unitary/toxic-bert
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    volumes:
+      - model_cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/worker_healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+    networks:
+      - socialconnect
+
+  # ─── AI Worker 3 ─────────────────────────────────────────
+  ai-worker-3:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile.worker
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DB_HOST=db
+      - DB_USER=root
+      - DB_PASSWORD=socialconnect_password
+      - DB_NAME=socialconnect
+      - WORKER_ID=worker-3
+      - QUEUE_NAME=content-moderation
+      - MAX_RETRIES=3
+      - MODEL_NAME=unitary/toxic-bert
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    volumes:
+      - model_cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/worker_healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+    networks:
+      - socialconnect
+
+  # ─── Prometheus ──────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    depends_on:
+      - backend-1
+    restart: unless-stopped
+    networks:
+      - socialconnect
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  socialconnect:
+    driver: bridge
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  db_data:
+    driver: local
+  redis_data:
+    driver: local
+  model_cache:
+    driver: local
+  server_uploads:
+    driver: local
+  prometheus_data:
+    driver: local

@@ -1,262 +1,235 @@
-import React, { useState, useEffect } from 'react';
-import { Box, Grid, CircularProgress, Fab, Typography, Button } from '@mui/material';
-import { Add as AddIcon } from '@mui/icons-material';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Box, Typography, CircularProgress, Avatar, Button, Skeleton } from '@mui/material';
 import Layout from '../components/Layout/Layout';
 import PostCard from '../components/Post/PostCard';
 import StoryBar from '../components/Story/StoryBar';
-import CreatePost from '../components/Post/CreatePost';
 import { postAPI, userAPI } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
+// Skeleton placeholder for loading posts
+const PostSkeleton = () => (
+  <Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #262626' }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+      <Skeleton variant="circular" width={32} height={32} sx={{ bgcolor: '#262626' }} />
+      <Skeleton variant="text" width={120} sx={{ bgcolor: '#262626' }} />
+    </Box>
+    <Skeleton variant="rectangular" width="100%" height={300} sx={{ bgcolor: '#1a1a1a', borderRadius: 1, mb: 1 }} />
+    <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+      <Skeleton variant="circular" width={28} height={28} sx={{ bgcolor: '#262626' }} />
+      <Skeleton variant="circular" width={28} height={28} sx={{ bgcolor: '#262626' }} />
+    </Box>
+    <Skeleton variant="text" width={80} sx={{ bgcolor: '#262626', mb: 0.5 }} />
+    <Skeleton variant="text" width="60%" sx={{ bgcolor: '#262626' }} />
+  </Box>
+);
+
 const Home = () => {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [posts, setPosts] = useState([]);
-  const [suggestions, setSuggestions] = useState([]);
-  const [followStates, setFollowStates] = useState({}); // Track follow status for each suggestion
   const [loading, setLoading] = useState(true);
-  const [createPostOpen, setCreatePostOpen] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(0);
+  const [suggestions, setSuggestions] = useState([]);
+  const [followStates, setFollowStates] = useState({});
+  const observerRef = useRef(null);
+  const PAGE_SIZE = 10;
 
-  const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+  const API_URL = (process.env.REACT_APP_API_URL || 'http://localhost:5000').replace(/\/api\/?$/, '');
 
-  useEffect(() => {
-    loadFeed();
-    loadSuggestions();
-  }, []);
+  useEffect(() => { loadFeed(0, true); loadSuggestions(); }, []); // eslint-disable-line
 
-  const loadFeed = async () => {
+  const loadFeed = async (pageNum = 0, isInitial = false) => {
     try {
-      const response = await postAPI.getFeedPosts();
-      setPosts(response.data.posts || []);
-    } catch (error) {
-      console.error('Load feed error:', error);
-      setPosts([]);
-    } finally {
+      if (isInitial) setLoading(true);
+      else setLoadingMore(true);
+
+      const response = await postAPI.getFeedPosts({ limit: PAGE_SIZE, offset: pageNum * PAGE_SIZE });
+      const newPosts = response.data.posts || [];
+      
+      if (isInitial) {
+        setPosts(newPosts);
+      } else {
+        setPosts(prev => {
+          const existingIds = new Set(prev.map(p => p.id));
+          const uniqueNew = newPosts.filter(p => !existingIds.has(p.id));
+          return [...prev, ...uniqueNew];
+        });
+      }
+
+      setHasMore(response.data.hasMore !== false && newPosts.length >= PAGE_SIZE);
+      setPage(pageNum);
+    } catch (error) { console.error('Load feed error:', error); }
+    finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
+
+  // Intersection Observer for infinite scroll
+  const lastPostRef = useCallback(node => {
+    if (loadingMore) return;
+    if (observerRef.current) observerRef.current.disconnect();
+    observerRef.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasMore && !loadingMore) {
+        loadFeed(page + 1, false);
+      }
+    }, { threshold: 0.5 });
+    if (node) observerRef.current.observe(node);
+  }, [loadingMore, hasMore, page]); // eslint-disable-line
 
   const loadSuggestions = async () => {
     try {
-      console.log('🔍 Loading suggestions...');
-      const response = await userAPI.getSuggestions();
-      console.log('📊 Suggestions API response:', response.data);
-      const suggestionsList = (response.data.suggestions || []).slice(0, 5);
-      console.log(`✅ Loaded ${suggestionsList.length} suggestions`);
-      
-      // Debug: Check profile picture URLs
-      suggestionsList.forEach((user, index) => {
-        console.log(`👤 Suggestion ${index + 1}:`, {
-          id: user.id,
-          username: user.username,
-          display_name: user.display_name,
-          profile_picture: user.profile_picture,
-          full_url: user.profile_picture ? (user.profile_picture.startsWith('http') ? user.profile_picture : `${API_URL}${user.profile_picture}`) : 'No image'
-        });
-      });
-      
-      setSuggestions(suggestionsList);
-      
-      // Initialize follow states for suggestions
+      const response = await userAPI.getSuggestions ? await userAPI.getSuggestions() : await userAPI.getUsers();
+      const userList = response.data.suggestions || response.data.users || [];
+      setSuggestions(userList.slice(0, 5));
       const states = {};
-      suggestionsList.forEach(user => {
-        states[user.id] = user.follow_status || null;
-      });
+      userList.forEach(u => { states[u.id] = u.follow_status || null; });
       setFollowStates(states);
-    } catch (error) {
-      console.error('❌ Load suggestions error:', error);
-      setSuggestions([]);
-    }
-  };
-
-  const handlePostCreated = (newPost) => {
-    setPosts([newPost, ...posts]);
-  };
-
-  const handlePostDelete = (postId) => {
-    setPosts(posts.filter((post) => post.id !== postId));
+    } catch (error) { console.error('Load suggestions error:', error); }
   };
 
   const handleFollow = async (userId) => {
     try {
-      const currentStatus = followStates[userId];
-      
-      if (currentStatus === 'accepted' || currentStatus === 'pending') {
-        // Unfollow or cancel pending request
+      if (followStates[userId]) {
         await userAPI.unfollowUser(userId);
-        setFollowStates({
-          ...followStates,
-          [userId]: null
-        });
+        setFollowStates(prev => ({ ...prev, [userId]: null }));
       } else {
-        // Send follow request
         await userAPI.followUser(userId);
-        setFollowStates({
-          ...followStates,
-          [userId]: 'pending'
-        });
+        setFollowStates(prev => ({ ...prev, [userId]: 'pending' }));
       }
-    } catch (error) {
-      console.error('Follow error:', error);
-    }
+    } catch (error) { console.error('Follow error:', error); }
   };
 
-  if (loading) {
-    return (
-      <Layout>
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight="50vh">
-          <CircularProgress />
-        </Box>
-      </Layout>
-    );
-  }
+  const handleDeletePost = (postId) => {
+    setPosts(posts.filter(p => p.id !== postId));
+  };
 
   return (
     <Layout>
-      <Grid container spacing={3}>
-        {/* Main Feed */}
-        <Grid item xs={12} md={8}>
+      <Box sx={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+        {/* ── Main Feed ── */}
+        <Box sx={{ maxWidth: 470, width: '100%' }}>
           <StoryBar />
 
-          {posts.length === 0 ? (
-            <Box
-              sx={{
-                textAlign: 'center',
-                py: 8,
-                bgcolor: 'background.paper',
-                borderRadius: 2,
-              }}
-            >
-              <Typography variant="h6" gutterBottom>
-                No posts yet
-              </Typography>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
+          {loading ? (
+            <Box>
+              {[1, 2, 3].map(i => <PostSkeleton key={i} />)}
+            </Box>
+          ) : posts.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 8 }}>
+              <Typography variant="h6" sx={{ color: '#F5F5F5', mb: 1 }}>No posts yet</Typography>
+              <Typography variant="body2" sx={{ color: '#A8A8A8', mb: 3 }}>
                 Follow users to see their posts in your feed
               </Typography>
-              <Button
-                variant="contained"
-                onClick={() => navigate('/search')}
-                sx={{ mt: 2 }}
-              >
+              <Button variant="contained" onClick={() => navigate('/search')} sx={{ borderRadius: 2 }}>
                 Find People
               </Button>
             </Box>
           ) : (
-            posts.map((post) => (
-              <PostCard
-                key={post.id}
-                post={post}
-                onDelete={handlePostDelete}
-              />
-            ))
-          )}
-        </Grid>
+            <>
+              {posts.map((post, index) => {
+                if (index === posts.length - 1) {
+                  return (
+                    <div ref={lastPostRef} key={post.id}>
+                      <PostCard post={post} onDelete={handleDeletePost} />
+                    </div>
+                  );
+                }
+                return <PostCard key={post.id} post={post} onDelete={handleDeletePost} />;
+              })}
 
-        {/* Sidebar */}
-        <Grid item xs={12} md={4}>
-          <Box sx={{ position: 'sticky', top: 80 }}>
-            {/* Suggested for you */}
-            <Box
-              sx={{
-                bgcolor: 'background.paper',
-                borderRadius: 2,
-                p: 2,
-                mb: 2,
-              }}
-            >
-              <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-                Suggested for you
-              </Typography>
-
-              {suggestions.map((user) => (
-                <Box
-                  key={user.id}
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    py: 1,
-                  }}
-                >
-                  <Box
-                    display="flex"
-                    alignItems="center"
-                    gap={1}
-                    onClick={() => navigate(`/${user.username}`)}
-                    sx={{ cursor: 'pointer', flex: 1 }}
-                  >
-                    <Box
-                      component="img"
-                      src={user.profile_picture ? (user.profile_picture.startsWith('http') ? user.profile_picture : `${API_URL}${user.profile_picture}`) : '/default-avatar.png'}
-                      alt={user.username}
-                      sx={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: '50%',
-                        objectFit: 'cover',
-                      }}
-                      onError={(e) => {
-                        console.error('❌ Suggested user profile picture failed to load:', user.profile_picture);
-                        console.error('❌ Full URL attempted:', user.profile_picture ? (user.profile_picture.startsWith('http') ? user.profile_picture : `${API_URL}${user.profile_picture}`) : 'No image URL');
-                        // Hide the broken image
-                        e.target.style.display = 'none';
-                      }}
-                      onLoad={() => {
-                        console.log('✅ Suggested user profile picture loaded successfully:', user.profile_picture);
-                      }}
-                    />
-                    <Box>
-                      <Typography variant="body2" fontWeight={600}>
-                        {user.display_name}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        @{user.username}
-                      </Typography>
-                    </Box>
-                  </Box>
-                  <Button
-                    size="small"
-                    variant="contained"
-                    onClick={() => handleFollow(user.id)}
-                    sx={{
-                      textTransform: 'none',
-                      fontWeight: 600,
-                      background: followStates[user.id] === 'pending' ? 
-                        'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)' :
-                        followStates[user.id] === 'accepted' ? 
-                        'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(99, 102, 241, 0.05) 100%)' : 
-                        'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-                      color: followStates[user.id] === 'accepted' ? 'primary.main' : 'white',
-                      border: followStates[user.id] === 'accepted' ? '2px solid #6366f1' : 'none',
-                      '&:hover': {
-                        background: followStates[user.id] === 'pending' ? 
-                          'linear-gradient(135deg, #d97706 0%, #f59e0b 100%)' :
-                          followStates[user.id] === 'accepted' ? 
-                          'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(99, 102, 241, 0.1) 100%)' : 
-                          'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
-                        transform: 'translateY(-1px)',
-                        boxShadow: '0 4px 12px rgba(99, 102, 241, 0.25)',
-                      },
-                    }}
-                  >
-                    {followStates[user.id] === 'pending' ? 'Requested' : 
-                     followStates[user.id] === 'accepted' ? 'Following' : 'Follow'}
-                  </Button>
+              {/* Loading more indicator */}
+              {loadingMore && (
+                <Box>
+                  <PostSkeleton />
                 </Box>
-              ))}
+              )}
+
+              {/* End of feed */}
+              {!hasMore && posts.length > 0 && (
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <Typography variant="body2" sx={{ color: '#A8A8A8' }}>
+                    ✓ You're all caught up
+                  </Typography>
+                </Box>
+              )}
+            </>
+          )}
+        </Box>
+
+        {/* ── Right Sidebar (Suggestions) ── */}
+        <Box sx={{ width: 320, flexShrink: 0, pt: 2, display: { xs: 'none', lg: 'block' } }}>
+          {/* Current user */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
+            <Avatar
+              src={user?.profile_picture ? `${API_URL}${user.profile_picture}` : ''}
+              onClick={() => navigate(`/${user?.username}`)}
+              sx={{ width: 44, height: 44, cursor: 'pointer' }}>
+              {user?.username?.[0]?.toUpperCase()}
+            </Avatar>
+            <Box flex={1} onClick={() => navigate(`/${user?.username}`)} sx={{ cursor: 'pointer' }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#F5F5F5' }}>{user?.username}</Typography>
+              <Typography variant="caption" sx={{ color: '#A8A8A8' }}>{user?.display_name}</Typography>
             </Box>
-
-        
-           
+            <Typography variant="caption" sx={{ color: '#0095F6', fontWeight: 600, cursor: 'pointer', fontSize: '0.75rem' }}>
+              Switch
+            </Typography>
           </Box>
-        </Grid>
-      </Grid>
 
-     
-      <CreatePost
-        open={createPostOpen}
-        onClose={() => setCreatePostOpen(false)}
-        onPostCreated={handlePostCreated}
-      />
+          {/* Suggestions header */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#A8A8A8' }}>
+              Suggested for you
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#F5F5F5', fontWeight: 600, cursor: 'pointer', fontSize: '0.75rem' }}
+              onClick={() => navigate('/search')}>
+              See All
+            </Typography>
+          </Box>
+
+          {/* Suggestion list */}
+          {suggestions.map(s => (
+            <Box key={s.id} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
+              <Avatar src={s.profile_picture ? (s.profile_picture.startsWith('http') ? s.profile_picture : `${API_URL}${s.profile_picture}`) : ''}
+                onClick={() => navigate(`/${s.username}`)}
+                sx={{ width: 32, height: 32, cursor: 'pointer' }}>
+                {s.username?.[0]?.toUpperCase()}
+              </Avatar>
+              <Box flex={1} minWidth={0}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer', '&:hover': { opacity: 0.7 } }}
+                  onClick={() => navigate(`/${s.username}`)} noWrap>
+                  {s.username}
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#A8A8A8', fontSize: '0.7rem' }} noWrap>
+                  {s.display_name || 'Suggested for you'}
+                </Typography>
+              </Box>
+              <Typography variant="caption"
+                onClick={() => handleFollow(s.id)}
+                sx={{
+                  color: followStates[s.id] ? '#A8A8A8' : '#0095F6',
+                  fontWeight: 700, cursor: 'pointer', fontSize: '0.75rem',
+                  '&:hover': { color: followStates[s.id] ? '#ccc' : '#fff' },
+                }}>
+                {followStates[s.id] === 'pending' ? 'Requested' : followStates[s.id] === 'accepted' ? 'Following' : 'Follow'}
+              </Typography>
+            </Box>
+          ))}
+
+          {/* Footer */}
+          <Box sx={{ mt: 4, color: '#363636', fontSize: '0.68rem' }}>
+            <Typography variant="caption" sx={{ color: '#363636', fontSize: '0.68rem' }}>
+              About · Help · Press · API · Jobs · Privacy · Terms · Locations · Language
+            </Typography>
+            <Typography variant="caption" sx={{ display: 'block', mt: 1.5, color: '#363636', fontSize: '0.68rem' }}>
+              © 2026 CLEANTALK
+            </Typography>
+          </Box>
+        </Box>
+      </Box>
     </Layout>
   );
 };

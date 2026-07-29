@@ -1503,6 +1503,161 @@ For issues or questions about the API:
 
 ---
 
-**API Version:** 1.0.0  
-**Last Updated:** January 2024
+## 🛡️ AI Content Moderation
 
+SocialConnect includes AI-powered content moderation using a DistilBERT model fine-tuned on the Jigsaw Toxic Comment Classification dataset. Moderation is applied to **comments** and **post captions**.
+
+### Moderation Flow
+
+```
+User submits content
+        │
+        ▼
+Backend calls AI Service: POST http://ai-service:8000/predict
+        │
+        ▼
+AI returns toxicity_score (0.0 to 1.0)
+        │
+        ├── score < 0.70   → ALLOW (HTTP 201 — content published)
+        ├── 0.70 ≤ score < 0.90 → WARN (HTTP 422 — warning returned)
+        └── score ≥ 0.90   → BLOCK (HTTP 403 — content rejected)
+```
+
+### Moderation Response Codes
+
+#### HTTP 422 — Content Warning
+
+Returned when toxicity score is between 0.70 and 0.89. User can edit or force-post.
+
+```json
+{
+  "success": false,
+  "moderated": true,
+  "action": "warn",
+  "message": "This comment may contain offensive language.",
+  "toxicity_score": 0.78,
+  "labels": {
+    "toxic": 0.78,
+    "severe_toxic": 0.02,
+    "obscene": 0.45,
+    "threat": 0.01,
+    "insult": 0.65,
+    "identity_hate": 0.03
+  }
+}
+```
+
+#### HTTP 403 — Content Blocked
+
+Returned when toxicity score is 0.90 or higher. Content is rejected and logged.
+
+```json
+{
+  "success": false,
+  "moderated": true,
+  "action": "block",
+  "message": "Your comment violates community guidelines.",
+  "toxicity_score": 0.94,
+  "labels": {
+    "toxic": 0.94,
+    "severe_toxic": 0.12,
+    "obscene": 0.67,
+    "threat": 0.08,
+    "insult": 0.89,
+    "identity_hate": 0.15
+  }
+}
+```
+
+### `forcePost` Parameter
+
+When a user receives a warning (HTTP 422) and clicks "Post Anyway", the frontend re-submits the request with `forcePost: true`. This bypasses the warning and publishes the content, while logging the event as `force_posted`.
+
+**For comments:**
+```json
+POST /api/posts/:postId/comment
+{
+  "content": "user's comment text",
+  "forcePost": true
+}
+```
+
+**For post captions (multipart/form-data):**
+```
+POST /api/posts
+FormData:
+  image: <file>
+  caption: "user's caption text"
+  forcePost: "true"
+```
+
+### Moderation Logs Table
+
+All moderation events are stored in the `moderation_logs` table:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INT AUTO_INCREMENT | Primary key |
+| `user_id` | INT | User who submitted the content |
+| `post_id` | INT (nullable) | Related post ID |
+| `content` | TEXT | Original content text |
+| `content_type` | ENUM | `'comment'` or `'caption'` |
+| `prediction` | VARCHAR(50) | Highest-scoring toxicity label |
+| `confidence` | DECIMAL(5,4) | Toxicity score (0.0000–1.0000) |
+| `labels` | JSON | Full label breakdown |
+| `action_taken` | ENUM | `'blocked'`, `'warned'`, or `'force_posted'` |
+| `created_at` | TIMESTAMP | Event timestamp |
+
+### AI Service Endpoints
+
+#### `POST /predict` — Analyze Text for Toxicity
+
+**URL:** `http://localhost:8000/predict`
+
+**Request:**
+```json
+{
+  "text": "Text to analyze (1-5000 characters)"
+}
+```
+
+**Response (200):**
+```json
+{
+  "toxicity_score": 0.94,
+  "labels": {
+    "toxic": 0.94,
+    "severe_toxic": 0.12,
+    "obscene": 0.67,
+    "threat": 0.08,
+    "insult": 0.89,
+    "identity_hate": 0.15
+  },
+  "prediction": "toxic",
+  "action": "block"
+}
+```
+
+**Errors:**
+- `400` — Invalid or empty text
+- `503` — Model not yet loaded (service starting up)
+
+#### `GET /health` — Health Check
+
+**URL:** `http://localhost:8000/health`
+
+**Response (200):**
+```json
+{
+  "status": "healthy",
+  "model_loaded": true,
+  "model_name": "unitary/toxic-bert",
+  "uptime": 3600.5
+}
+```
+
+---
+
+**API Version:** 2.0.0  
+**Last Updated:** June 2026  
+**New in v2.0.0:** AI Content Moderation (Comments + Post Captions)

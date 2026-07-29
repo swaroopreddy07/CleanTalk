@@ -18,7 +18,7 @@ import { Close as CloseIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { userAPI } from '../../services/api';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+const API_URL = (process.env.REACT_APP_API_URL || 'http://localhost:5000').replace(/\/api\/?$/, '');
 
 const FollowingModal = ({ open, onClose, userId }) => {
   const navigate = useNavigate();

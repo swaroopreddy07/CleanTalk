@@ -1,17 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Box,
-  TextField,
-  InputAdornment,
-  List,
-  ListItem,
-  ListItemAvatar,
-  ListItemText,
-  Avatar,
-  Button,
-  Typography,
-  CircularProgress,
-} from '@mui/material';
+import { Box, TextField, InputAdornment, Avatar, Button, Typography, CircularProgress } from '@mui/material';
 import { Search as SearchIcon } from '@mui/icons-material';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout/Layout';
@@ -23,189 +11,57 @@ const Search = () => {
   const [query, setQuery] = useState(searchParams.get('q') || '');
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [followStates, setFollowStates] = useState({}); // Track follow status for each user
+  const [followStates, setFollowStates] = useState({});
+  const API_URL = (process.env.REACT_APP_API_URL || 'http://localhost:5000').replace(/\/api\/?$/, '');
 
-  const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
-
-  useEffect(() => {
-    if (query) {
-      handleSearch();
-    }
-  }, [query]);
+  useEffect(() => { if (query) handleSearch(); }, [query]);
 
   const handleSearch = async () => {
     if (!query.trim()) return;
-
     setLoading(true);
     try {
-      const response = await userAPI.searchUsers(query);
-      const searchResults = response.data.users || [];
-      setUsers(searchResults);
-
-      // Initialize follow states for each user
-      const initialFollowStates = {};
-      searchResults.forEach(user => {
-        initialFollowStates[user.id] = user.follow_status || null;
-      });
-      setFollowStates(initialFollowStates);
-    } catch (error) {
-      console.error('Search error:', error);
-      setUsers([]);
-    } finally {
-      setLoading(false);
-    }
+      const r = await userAPI.searchUsers(query);
+      const results = r.data.users || [];
+      setUsers(results);
+      const s = {}; results.forEach(u => { s[u.id] = u.follow_status || null; }); setFollowStates(s);
+    } catch (e) { setUsers([]); } finally { setLoading(false); }
   };
 
-  const handleFollow = async (userId, currentStatus) => {
+  const handleFollow = async (userId, status) => {
     try {
-      if (currentStatus === 'accepted') {
-        // Unfollow
-        await userAPI.unfollowUser(userId);
-        setFollowStates(prev => ({
-          ...prev,
-          [userId]: null
-        }));
-      } else if (currentStatus === 'pending') {
-        // Cancel follow request
-        await userAPI.unfollowUser(userId);
-        setFollowStates(prev => ({
-          ...prev,
-          [userId]: null
-        }));
-      } else {
-        // Follow (send request)
-        await userAPI.followUser(userId);
-        setFollowStates(prev => ({
-          ...prev,
-          [userId]: 'pending'
-        }));
-      }
-    } catch (error) {
-      console.error('Follow/Unfollow error:', error);
-    }
-  };
-
-  const getFollowButtonProps = (followStatus) => {
-    switch (followStatus) {
-      case 'accepted':
-        return { variant: 'outlined', color: 'inherit', text: 'Following' };
-      case 'pending':
-        return { variant: 'outlined', color: 'primary', text: 'Requested' };
-      default:
-        return { variant: 'contained', color: 'primary', text: 'Follow' };
-    }
+      if (status) { await userAPI.unfollowUser(userId); setFollowStates(p => ({ ...p, [userId]: null })); }
+      else { await userAPI.followUser(userId); setFollowStates(p => ({ ...p, [userId]: 'pending' })); }
+    } catch (e) {}
   };
 
   return (
     <Layout>
-      <Box sx={{ maxWidth: 600, mx: 'auto', p: 3 }}>
-        <Typography variant="h4" fontWeight={600} gutterBottom>
-          Search
-        </Typography>
-
-        <TextField
-          fullWidth
-          placeholder="Search users..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon />
-              </InputAdornment>
-            ),
-          }}
-          sx={{ mb: 3 }}
-        />
+      <Box sx={{ maxWidth: 600, mx: 'auto' }}>
+        <TextField fullWidth size="small" placeholder="Search" value={query} onChange={(e) => setQuery(e.target.value)}
+          InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: '#A8A8A8', fontSize: 20 }} /></InputAdornment> }}
+          sx={{ mb: 3, '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#262626', '& fieldset': { border: 'none' } } }} />
 
         {loading ? (
-          <Box display="flex" justifyContent="center" py={4}>
-            <CircularProgress />
-          </Box>
-        ) : query && (
-          <Box>
-            <Typography variant="h6" fontWeight={600} gutterBottom>
-              Users
-            </Typography>
-            
-            {users.length === 0 ? (
-              <Box sx={{ textAlign: 'center', py: 4 }}>
-                <Typography variant="body2" color="text.secondary">
-                  No users found
-                </Typography>
+          <Box display="flex" justifyContent="center" py={4}><CircularProgress size={24} sx={{ color: '#A8A8A8' }} /></Box>
+        ) : query && users.length === 0 ? (
+          <Box textAlign="center" py={6}><Typography sx={{ color: '#A8A8A8' }}>No results found.</Typography></Box>
+        ) : (
+          users.map(u => (
+            <Box key={u.id} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 1, px: 1, cursor: 'pointer', borderRadius: 1, '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' } }}>
+              <Avatar src={u.profile_picture ? (u.profile_picture.startsWith('http') ? u.profile_picture : `${API_URL}${u.profile_picture}`) : ''}
+                onClick={() => navigate(`/${u.username}`)} sx={{ width: 44, height: 44, cursor: 'pointer' }}>
+                {u.username?.[0]?.toUpperCase()}
+              </Avatar>
+              <Box flex={1} onClick={() => navigate(`/${u.username}`)}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>{u.username}</Typography>
+                <Typography variant="caption" sx={{ color: '#A8A8A8' }}>{u.display_name}</Typography>
               </Box>
-            ) : (
-              <List sx={{ bgcolor: 'background.paper', borderRadius: 2 }}>
-                {users.map((user) => (
-                  <ListItem key={user.id}>
-                    <Box
-                      display="flex"
-                      alignItems="center"
-                      gap={1}
-                      onClick={() => navigate(`/${user.username}`)}
-                      sx={{ 
-                        cursor: 'pointer', 
-                        flex: 1,
-                        '&:hover': {
-                          backgroundColor: 'action.hover',
-                          borderRadius: 1,
-                          mx: -1,
-                          px: 1
-                        }
-                      }}
-                    >
-                      <ListItemAvatar>
-                        <Avatar
-                          src={user.profile_picture ? (user.profile_picture.startsWith('http') ? user.profile_picture : `${API_URL}${user.profile_picture}`) : ''}
-                          alt={user.username}
-                        >
-                          {user.username?.[0]?.toUpperCase()}
-                        </Avatar>
-                      </ListItemAvatar>
-                      <ListItemText
-                        primary={
-                          <Typography variant="subtitle2" fontWeight={600}>
-                            {user.username}
-                          </Typography>
-                        }
-                        secondary={user.display_name}
-                      />
-                    </Box>
-                    <Button
-                      variant="contained"
-                      onClick={(e) => {
-                        e.stopPropagation(); // Prevent navigation when clicking follow button
-                        handleFollow(user.id, followStates[user.id]);
-                      }}
-                      size="small"
-                      sx={{
-                        textTransform: 'none',
-                        fontWeight: 600,
-                        background: followStates[user.id] === 'pending' ? 
-                          'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)' :
-                          followStates[user.id] === 'accepted' ? 
-                          'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(99, 102, 241, 0.05) 100%)' : 
-                          'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-                        color: followStates[user.id] === 'accepted' ? 'primary.main' : 'white',
-                        border: followStates[user.id] === 'accepted' ? '2px solid #6366f1' : 'none',
-                        '&:hover': {
-                          background: followStates[user.id] === 'pending' ? 
-                            'linear-gradient(135deg, #d97706 0%, #f59e0b 100%)' :
-                            followStates[user.id] === 'accepted' ? 
-                            'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(99, 102, 241, 0.1) 100%)' : 
-                            'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
-                          transform: 'translateY(-1px)',
-                          boxShadow: '0 4px 12px rgba(99, 102, 241, 0.25)',
-                        },
-                      }}
-                    >
-                      {getFollowButtonProps(followStates[user.id]).text}
-                    </Button>
-                  </ListItem>
-                ))}
-              </List>
-            )}
-          </Box>
+              <Typography onClick={(e) => { e.stopPropagation(); handleFollow(u.id, followStates[u.id]); }}
+                sx={{ color: followStates[u.id] ? '#A8A8A8' : '#0095F6', fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem' }}>
+                {followStates[u.id] === 'pending' ? 'Requested' : followStates[u.id] === 'accepted' ? 'Following' : 'Follow'}
+              </Typography>
+            </Box>
+          ))
         )}
       </Box>
     </Layout>

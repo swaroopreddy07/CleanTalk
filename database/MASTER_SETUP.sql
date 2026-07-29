@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS posts (
     user_id INT NOT NULL,                                 -- ID of the user who created the post
     caption TEXT,                                         -- Post text content/caption
     image_url VARCHAR(255),                               -- Image URL/path (can be null for text-only posts)
+    moderation_status ENUM('pending', 'approved', 'warned', 'blocked') DEFAULT 'approved', -- Caption moderation status
     hashtags JSON,                                        -- JSON array of hashtags (modern approach)
     likes_count INT DEFAULT 0,                           -- Cached count of likes (for performance)
     comments_count INT DEFAULT 0,                        -- Cached count of comments (for performance)
@@ -109,7 +110,8 @@ CREATE TABLE IF NOT EXISTS posts (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Last update timestamp
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, -- Cascade delete when user is deleted
     INDEX idx_user_id (user_id),                         -- Index for fast user post lookups
-    INDEX idx_created_at (created_at)                     -- Index for chronological sorting
+    INDEX idx_created_at (created_at),                    -- Index for chronological sorting
+    INDEX idx_moderation_status (moderation_status)       -- Index for moderation filtering
 );
 
 -- =============================================================================
@@ -137,10 +139,12 @@ CREATE TABLE IF NOT EXISTS comments (
     post_id INT NOT NULL,                                 -- ID of the post being commented on
     user_id INT NOT NULL,                                 -- ID of the user making the comment
     content TEXT NOT NULL,                               -- Comment text content
+    status ENUM('pending', 'approved', 'warned', 'blocked') DEFAULT 'pending', -- Moderation status
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,       -- Comment creation timestamp
     FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE, -- Cascade delete when post is deleted
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, -- Cascade delete when user is deleted
-    INDEX idx_post_id (post_id)                           -- Index for fast post comment lookups
+    INDEX idx_post_id (post_id),                          -- Index for fast post comment lookups
+    INDEX idx_comment_status (status)                     -- Index for status filtering
 );
 
 -- =============================================================================
@@ -353,6 +357,89 @@ CREATE TABLE IF NOT EXISTS saved_posts (
     UNIQUE KEY unique_save (user_id, post_id),           -- Prevent duplicate saves by same user on same post
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, -- Cascade delete when user is deleted
     FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE  -- Cascade delete when post is deleted
+);
+
+-- =============================================================================
+-- MODERATION LOGS TABLE (AI Content Moderation)
+-- =============================================================================
+-- 
+-- AI moderation audit trail
+-- Stores all content flagged by the AI moderation service
+--
+-- Key Features:
+-- - Tracks all moderated content (comments and captions)
+-- - Stores toxicity scores and label breakdowns
+-- - Records action taken (blocked, warned, force_posted)
+-- - Provides audit trail for content moderation
+-- - Supports admin review and analytics
+--
+-- Threshold-Based Moderation:
+-- - Score < 0.70:  Content published automatically
+-- - Score 0.70-0.89: Warning shown, user can edit or force post
+-- - Score >= 0.90: Content blocked, logged here
+--
+-- Indexes:
+-- - idx_moderation_user_id: Fast user moderation history lookups
+-- - idx_moderation_content_type: Fast filtering by content type
+-- - idx_moderation_action_taken: Fast filtering by action
+-- - idx_moderation_created_at: Fast chronological queries
+-- - idx_moderation_prediction: Fast filtering by prediction type
+--
+-- Relationships:
+-- - References: users (user_id), posts (post_id, optional)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS moderation_logs (
+    id INT PRIMARY KEY AUTO_INCREMENT,                    -- Unique moderation log identifier
+    user_id INT NOT NULL,                                 -- ID of the user who submitted the content
+    post_id INT,                                          -- ID of the related post (nullable for captions before post creation)
+    content TEXT NOT NULL,                                -- The original content that was moderated
+    content_type ENUM('comment', 'caption') NOT NULL,     -- Type of content: 'comment' or 'caption'
+    prediction VARCHAR(50) NOT NULL,                      -- Primary toxicity label (e.g., 'toxic', 'insult', 'threat')
+    confidence DECIMAL(5,4) NOT NULL,                     -- Toxicity confidence score (0.0000 to 1.0000)
+    labels JSON,                                          -- Full label breakdown from AI model
+    action_taken ENUM('blocked', 'warned', 'force_posted', 'approved') NOT NULL, -- Action taken on the content
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,       -- Moderation event timestamp
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE SET NULL,
+    INDEX idx_moderation_user_id (user_id),
+    INDEX idx_moderation_content_type (content_type),
+    INDEX idx_moderation_action_taken (action_taken),
+    INDEX idx_moderation_created_at (created_at),
+    INDEX idx_moderation_prediction (prediction)
+);
+
+-- =============================================================================
+-- WORKER LOGS TABLE (AI Worker Processing)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS worker_logs (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    worker_id VARCHAR(50) NOT NULL,
+    job_id VARCHAR(100) NOT NULL,
+    comment_id INT,
+    content_type VARCHAR(20) DEFAULT 'comment',
+    action VARCHAR(20),
+    toxicity_score DECIMAL(5,4),
+    processing_time_ms INT,
+    status ENUM('completed', 'failed', 'retried', 'dlq') NOT NULL,
+    error_message TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_worker_id (worker_id),
+    INDEX idx_job_id (job_id),
+    INDEX idx_worker_status (status),
+    INDEX idx_worker_created (created_at)
+);
+
+-- =============================================================================
+-- QUEUE METRICS TABLE (Moderation Queue)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS queue_metrics (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    metric_name VARCHAR(100) NOT NULL,
+    metric_value DECIMAL(10,4) NOT NULL,
+    metadata JSON,
+    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_metric_name (metric_name),
+    INDEX idx_recorded_at (recorded_at)
 );
 
 -- =============================================================================

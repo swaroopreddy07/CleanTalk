@@ -18,7 +18,7 @@ import {
 import { Close as CloseIcon, PersonAdd } from '@mui/icons-material';
 import { userAPI } from '../../services/api';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+const API_URL = (process.env.REACT_APP_API_URL || 'http://localhost:5000').replace(/\/api\/?$/, '');
 
 const FollowRequestsDialog = ({ open, onClose }) => {
   const [requests, setRequests] = useState([]);

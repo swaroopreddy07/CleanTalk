@@ -14,7 +14,12 @@ const {
   getSuggestions,
   getFollowRequests,
   acceptFollowRequest,
-  rejectFollowRequest
+  rejectFollowRequest,
+  blockUser,
+  unblockUser,
+  getBlockedUsers,
+  updatePrivacy,
+  updateTheme
 } = require('../controllers/userController');
 const protect = require('../middleware/auth');
 const upload = require('../middleware/upload');
@@ -30,6 +35,15 @@ router.get('/follow-requests', getFollowRequests);
 router.post('/follow-requests/:requestId/accept', acceptFollowRequest);
 router.post('/follow-requests/:requestId/reject', rejectFollowRequest);
 
+// Block routes
+router.get('/blocked', getBlockedUsers);
+router.post('/:id/block', blockUser);
+router.delete('/:id/block', unblockUser);
+
+// Privacy & Theme
+router.put('/privacy', updatePrivacy);
+router.put('/theme', updateTheme);
+
 router.get('/:username', getUserProfile);
 router.put('/profile', upload.uploadProfile.single('profilePicture'), updateProfile);
 
@@ -40,4 +54,3 @@ router.get('/:userId/followers', getFollowers);
 router.get('/:userId/following', getFollowing);
 
 module.exports = router;
-
