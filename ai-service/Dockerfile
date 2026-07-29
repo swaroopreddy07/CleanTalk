@@ -37,7 +37,7 @@ RUN pip install --no-cache-dir \
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application source code
-COPY config.py model.py app.py ./
+COPY . .
 
 # Create non-root user for production security
 RUN useradd --create-home --shell /bin/bash appuser
