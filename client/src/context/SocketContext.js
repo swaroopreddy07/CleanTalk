@@ -41,8 +41,10 @@ export const useSocket = () => {
   return context;
 };
 
-// Socket.IO server URL - defaults to localhost:5000 for development
-const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000';
+// Socket.IO server URL - auto-detects current host for deployed environments
+const SOCKET_URL = (process.env.REACT_APP_SOCKET_URL && process.env.REACT_APP_SOCKET_URL !== '__AUTO__')
+  ? process.env.REACT_APP_SOCKET_URL
+  : (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5000');
 
 /**
  * Socket.IO Provider Component
