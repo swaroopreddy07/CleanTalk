@@ -88,6 +88,8 @@ RUN pip3 install --no-cache-dir --upgrade pip \
 COPY deploy/nginx.conf /etc/nginx/sites-available/default
 COPY deploy/supervisord.conf /etc/supervisor/conf.d/cleantalk.conf
 COPY deploy/start.sh /app/start.sh
+# Fix Windows CRLF line endings → Unix LF
+RUN sed -i 's/\r$//' /app/start.sh /etc/nginx/sites-available/default /etc/supervisor/conf.d/cleantalk.conf
 RUN chmod +x /app/start.sh
 
 # ─── MySQL permissions ──────────────────────────────────────
