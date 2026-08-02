@@ -83,12 +83,10 @@ MIGRATION
 
 echo "  Database ready ✓"
 
-# Stop temporary MySQL — Supervisor will manage it
+# Stop temporary MySQL — Supervisor will start a fresh one
 echo "  Stopping temporary MySQL..."
-kill $MYSQL_PID 2>/dev/null || true
-sleep 2
 kill -9 $MYSQL_PID 2>/dev/null || true
-wait $MYSQL_PID 2>/dev/null || true
+sleep 1
 echo "  Temporary MySQL stopped ✓"
 
 # ─── 2. Configure Nginx port ────────────────────────────────
