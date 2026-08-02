@@ -5,7 +5,7 @@ echo "============================================================"
 echo "  CleanTalk — Starting All Services"
 echo "============================================================"
 
-PORT=${PORT:-3000}
+PORT=${PORT:-10000}
 
 # ─── 1. Initialize MySQL ────────────────────────────────────
 echo "[1/4] Initializing MySQL..."
@@ -86,13 +86,14 @@ echo "  Database ready ✓"
 # Stop temporary MySQL — Supervisor will manage it
 echo "  Stopping temporary MySQL..."
 kill $MYSQL_PID 2>/dev/null || true
+sleep 2
+kill -9 $MYSQL_PID 2>/dev/null || true
 wait $MYSQL_PID 2>/dev/null || true
-sleep 1
 echo "  Temporary MySQL stopped ✓"
 
 # ─── 2. Configure Nginx port ────────────────────────────────
 echo "[2/4] Configuring Nginx on port ${PORT}..."
-sed -i "s/listen __PORT__/listen ${PORT}/" /etc/nginx/sites-available/default
+sed -i "s/listen 0.0.0.0:__PORT__/listen 0.0.0.0:${PORT}/" /etc/nginx/sites-available/default
 
 # ─── 3. Remove default nginx site conflict ───────────────────
 echo "[3/4] Setting up Nginx..."
