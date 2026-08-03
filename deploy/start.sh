@@ -32,7 +32,7 @@ done
 # Set up database and schema
 echo "  Creating database..."
 mysql -u root <<EOF 2>/dev/null || true
-ALTER USER 'root'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';
+ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${DB_PASSWORD}';
 CREATE DATABASE IF NOT EXISTS ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 FLUSH PRIVILEGES;
 EOF
